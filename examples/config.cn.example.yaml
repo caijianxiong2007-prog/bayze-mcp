@@ -1,0 +1,91 @@
+# 大陆向真实供应商示例 —— DeepSeek / 通义 DashScope / 火山方舟（均为 OpenAI 兼容端点）
+#
+# 使用前：
+#   export BAYZE_DEEPSEEK_API_KEY=...    # DeepSeek 开放平台
+#   export BAYZE_DASHSCOPE_API_KEY=...   # 阿里云 DashScope（百炼）
+#   export BAYZE_ARK_API_KEY=...         # 火山方舟
+#   node dist/src/cli.js config check --config examples/config.cn.example.yaml --strict
+#   node dist/src/cli.js run --workflow review_then_revise_cn --config examples/config.cn.example.yaml --input "你的任务"
+#
+# 重要说明（如实）：
+#   - 端点与模型 ID 为公开形态，仍以各官方文档为准（待核验）；
+#   - 价格全部为「假数据」示例，官方以 CNY 计价，请自行按官方价格页核实替换；
+#   - Bayze P0 的预算币种为 USD 且不做汇率换算：CNY 定价按「价格未知」处理——
+#     若设置了 max_cost_usd 且未放行未知价格，会在调用前 fail-closed 拒绝。
+#     本示例为可直接运行选择了 allow_unknown_price: true：运行时费用将提示
+#     「无法估算」，硬上限仅对 USD 定价生效。
+#     若需要严格的 USD 预算：按官方 CNY 价格自行折算，把 pricing 改为
+#     currency: USD 填入，并删除 allow_unknown_price。
+#   - 火山方舟可能要求使用你控制台创建的「接入点 ID」（形如 ep-2024…）而非
+#     模型名，以 Ark 控制台为准（待核验）。
+
+version: 1
+
+runtime:
+  max_concurrency: 2
+  max_queue_size: 4
+
+providers:
+  deepseek:
+    kind: openai-compatible
+    base_url: "https://api.deepseek.com/v1"
+    api_key_ref: "env:BAYZE_DEEPSEEK_API_KEY"
+    models:
+      - id: deepseek-chat
+        # 假数据：以官方价格页为准
+        pricing: { currency: CNY, input_per_1m_tokens: 2.0, output_per_1m_tokens: 8.0 }
+      - id: deepseek-reasoner
+        pricing: { currency: CNY, input_per_1m_tokens: 4.0, output_per_1m_tokens: 16.0 }
+
+  dashscope:
+    kind: openai-compatible
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key_ref: "env:BAYZE_DASHSCOPE_API_KEY"
+    models:
+      - id: qwen-plus
+        pricing: { currency: CNY, input_per_1m_tokens: 0.8, output_per_1m_tokens: 2.0 }
+      - id: qwen-turbo
+        pricing: { currency: CNY, input_per_1m_tokens: 0.3, output_per_1m_tokens: 0.6 }
+
+  ark:
+    kind: openai-compatible
+    base_url: "https://ark.cn-beijing.volces.com/api/v3"
+    api_key_ref: "env:BAYZE_ARK_API_KEY"
+    models:
+      # 如你的方舟项目使用接入点 ID，请把 id 替换为 ep-… 形式
+      - id: doubao-pro-32k
+        pricing: { currency: CNY, input_per_1m_tokens: 0.8, output_per_1m_tokens: 2.0 }
+
+workflows:
+  # 跨厂商复核：DeepSeek 起草 → 通义评审 → 豆包修订（三家各用其一，演示多供应商路由）
+  review_then_revise_cn:
+    strategy: waterfall
+    limits:
+      max_steps: 3
+      total_timeout_ms: 120000
+      max_output_tokens: 8000
+      max_cost_usd: 0.20
+      allow_unknown_price: true   # CNY 定价说明见文件头；要严格 USD 预算见文件头改法
+      max_retries_per_step: 1
+    steps:
+      - name: draft
+        provider: deepseek
+        model: deepseek-chat
+        input: original
+        timeout_ms: 45000
+        max_retries: 1
+        evaluate: [non_empty, { max_chars: 20000 }]
+      - name: review
+        provider: dashscope
+        model: qwen-plus
+        input: review_template
+        timeout_ms: 45000
+        run_if: always
+        gate: structured_review
+        review_schema: [verdict, reasons]
+      - name: revise
+        provider: ark
+        model: doubao-pro-32k
+        input: revision_template
+        timeout_ms: 45000
+        run_if: review_verdict_is_revise

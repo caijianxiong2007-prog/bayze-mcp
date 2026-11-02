@@ -36,10 +36,15 @@ node dist/src/cli.js config path
 
 **接入 AI 客户端**（Claude Desktop / Cursor / Cherry Studio 等支持 MCP 的客户端）：见 [docs/mcp-clients.md](docs/mcp-clients.md)。三工具：`list_workflows`、`run_workflow`（长任务带步骤级进度通知，可取消）、`get_run_summary`。
 
-**接入真实供应商**（BYOK，密钥只放环境变量）：在配置中声明 `kind: openai-compatible`（如 DeepSeek/通义/火山方舟等 OpenAI 兼容端点）或 `kind: anthropic`，设置 `api_key_ref: env:你的变量名`，并从官方价格页核实模型定价（示例中的价格均为假数据）。然后：
+**接入真实供应商**（BYOK，密钥只放环境变量）：在配置中声明 `kind: openai-compatible`（如 DeepSeek/通义/火山方舟等 OpenAI 兼容端点）或 `kind: anthropic`，设置 `api_key_ref: env:你的变量名`，并从官方价格页核实模型定价（示例中的价格均为假数据）。参考发行示例：
+
+- **大陆向**：[examples/config.cn.example.yaml](examples/config.cn.example.yaml) —— DeepSeek 起草 → 通义 DashScope 评审 → 火山方舟（豆包）修订的跨厂商工作流；含 CNY 定价与 USD 预算（`allow_unknown_price`）的边界说明
+- **国际向**：[examples/config.intl.example.yaml](examples/config.intl.example.yaml) —— OpenAI 同厂分级复核（gpt-4o-mini → gpt-4o）；USD 定价下硬预算直接生效
+- 通用形态（含 Anthropic 与本地端点 opt-in）：[examples/config.example.yaml](examples/config.example.yaml)
 
 ```bash
-export BAYZE_YOUR_PROVIDER_KEY=...        # 密钥只进环境变量
+export BAYZE_DEEPSEEK_API_KEY=... 等      # 密钥只进环境变量
+node dist/src/cli.js config check --config <你的配置> --strict
 node dist/src/cli.js run --workflow <你的工作流> --config <你的配置> --input "任务"
 ```
 

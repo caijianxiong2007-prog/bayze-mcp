@@ -1,0 +1,65 @@
+# 国际向真实供应商示例 —— OpenAI
+#
+# 使用前：
+#   export BAYZE_OPENAI_API_KEY=...
+#   node dist/src/cli.js config check --config examples/config.intl.example.yaml --strict
+#   node dist/src/cli.js run --workflow review_then_revise_intl --config examples/config.intl.example.yaml --input "your task"
+#
+# 重要说明（如实）：
+#   - 端点与模型 ID 为公开形态，仍以官方文档为准（待核验）；
+#   - 价格为「假数据」示例（官方以 USD 计价），请按官方价格页核实替换；
+#   - 与大陆向示例的区别：USD 定价可直接参与硬预算——本示例的 max_cost_usd
+#     是被强制执行的（无需 allow_unknown_price）。Anthropic 形态示例见
+#     examples/config.example.yaml 的 example-anthropic。
+#   - 使用需自行具备相应的网络与支付环境。
+
+version: 1
+
+runtime:
+  max_concurrency: 2
+  max_queue_size: 4
+
+providers:
+  openai:
+    kind: openai-compatible
+    base_url: "https://api.openai.com/v1"
+    api_key_ref: "env:BAYZE_OPENAI_API_KEY"
+    models:
+      - id: gpt-4o-mini
+        # 假数据：以官方价格页为准
+        pricing: { currency: USD, input_per_1m_tokens: 0.15, output_per_1m_tokens: 0.60 }
+      - id: gpt-4o
+        pricing: { currency: USD, input_per_1m_tokens: 2.50, output_per_1m_tokens: 10.00 }
+
+workflows:
+  # 同厂分级复核：轻量模型起草 → 强模型评审 → 轻量模型按意见修订
+  review_then_revise_intl:
+    strategy: waterfall
+    limits:
+      max_steps: 3
+      total_timeout_ms: 120000
+      max_output_tokens: 8000
+      max_cost_usd: 0.10      # USD 定价：硬上限生效（调用前保守预估拦截）
+      max_retries_per_step: 1
+    steps:
+      - name: draft
+        provider: openai
+        model: gpt-4o-mini
+        input: original
+        timeout_ms: 45000
+        max_retries: 1
+        evaluate: [non_empty, { max_chars: 20000 }]
+      - name: review
+        provider: openai
+        model: gpt-4o
+        input: review_template
+        timeout_ms: 45000
+        run_if: always
+        gate: structured_review
+        review_schema: [verdict, reasons]
+      - name: revise
+        provider: openai
+        model: gpt-4o-mini
+        input: revision_template
+        timeout_ms: 45000
+        run_if: review_verdict_is_revise
