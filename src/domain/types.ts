@@ -15,7 +15,9 @@ export type StopReason =
   | 'missing_required_input'
   | 'budget_exceeded'
   | 'cancelled'
-  | 'workflow_exhausted';
+  | 'workflow_exhausted'
+  | 'review_failed'
+  | 'timed_out';
 
 export type ProviderErrorCode =
   | 'auth'
@@ -33,7 +35,8 @@ export type TriggerReason =
   | 'quality_gate_failed'
   | 'provider_timeout'
   | 'rate_limit'
-  | `check_failed:${string}`;
+  | `check_failed:${string}`
+  | `provider_error:${string}`;
 
 export interface Usage {
   inputTokens: number;
@@ -84,4 +87,6 @@ export interface RunResult {
   stopReason: StopReason;
   triggerReason?: TriggerReason;
   warnings: string[];
+  /** 最近一次结构化评审结论（若有）；模型意见而非事实保证（基线 §7） */
+  reviewSummary?: { verdict: 'accept' | 'revise'; reasons: string[] };
 }

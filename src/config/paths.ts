@@ -15,3 +15,8 @@ export function defaultConfigDir(): string {
 export function defaultConfigPath(): string {
   return join(defaultConfigDir(), 'config.yaml');
 }
+
+/** journal 与配置同目录（基线 §8：摘要 JSONL、7 天/10MB、可清除） */
+export function defaultJournalPath(): string {
+  return join(defaultConfigDir(), 'journal.jsonl');
+}
