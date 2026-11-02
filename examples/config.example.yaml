@@ -35,6 +35,16 @@ providers:
     # 如需连接本地模型端点（如 http://127.0.0.1:11434/v1），必须显式声明：
     # allow_insecure_base_url: true
 
+  # Anthropic Messages 适配器示例（独立协议：x-api-key 鉴权、/v1/messages）
+  # 模型 id 与定价为占位假数据，使用前以官方价格页核实（基线 §10.7 待核验）
+  example-anthropic:
+    kind: anthropic
+    api_key_ref: "env:BAYZE_ANTHROPIC_API_KEY"
+    # base_url 默认 https://api.anthropic.com，可省略
+    models:
+      - id: "example-claude-model"
+        pricing: { currency: USD, input_per_1m_tokens: 3.00, output_per_1m_tokens: 15.00 }
+
 workflows:
   # 首发工作流（基线 §7）：草稿 → 必经结构化评审 → 拒绝时修订一次
   review_then_revise_mock:

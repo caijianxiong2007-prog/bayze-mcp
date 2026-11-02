@@ -2,7 +2,7 @@
 
 本地运行、可审计、可扩展的开源 AI 模型路由核心。通过 MCP stdio 接入支持工具调用的 AI 客户端，首期提供「草稿 → 必经结构化评审 → 按需修订」的 `review_then_revise` 瀑布工作流。
 
-> 状态：**阶段 3（MCP 接入）已完成** —— stdio server 暴露 `list_workflows` / `run_workflow` / `get_run_summary` 三工具，含步骤级进度通知、取消传播、并发/队列限制；mock 工作流可在真实 MCP 客户端中发现并调用。真实供应商适配器见阶段 4。用户自带模型凭证（BYOK）；默认无遥测、无云端组件、无本地监听。
+> 状态：**阶段 4（真实供应商适配器）已完成（契约级验证）** —— OpenAI 兼容 + Anthropic Messages 双适配器就绪（错误映射、用量、能力如实呈现），经本地回环 HTTP 契约测试覆盖全部错误路径；真实供应商联调需用户自带密钥（见下）。用户自带模型凭证（BYOK）；默认无遥测、无云端组件、无本地监听。
 
 ## 环境要求
 
@@ -36,6 +36,13 @@ node dist/src/cli.js config path
 
 **接入 AI 客户端**（Claude Desktop / Cursor / Cherry Studio 等支持 MCP 的客户端）：见 [docs/mcp-clients.md](docs/mcp-clients.md)。三工具：`list_workflows`、`run_workflow`（长任务带步骤级进度通知，可取消）、`get_run_summary`。
 
+**接入真实供应商**（BYOK，密钥只放环境变量）：在配置中声明 `kind: openai-compatible`（如 DeepSeek/通义/火山方舟等 OpenAI 兼容端点）或 `kind: anthropic`，设置 `api_key_ref: env:你的变量名`，并从官方价格页核实模型定价（示例中的价格均为假数据）。然后：
+
+```bash
+export BAYZE_YOUR_PROVIDER_KEY=...        # 密钥只进环境变量
+node dist/src/cli.js run --workflow <你的工作流> --config <你的配置> --input "任务"
+```
+
 示例配置使用 mock provider 演练全部路径（成功 / 空输出 / 超时 / 限流 / 挂起中止等）；`example-remote` 为假数据的 OpenAI 兼容供应商样例——密钥仅允许 `env:` 引用。真实供应商适配器在阶段 4 交付。
 
 配置错误会定位到具体字段，例如：
@@ -49,7 +56,7 @@ config check failed (invalid): /path/to/config.yaml
 ## 测试
 
 ```bash
-npm test   # 83 项：配置 schema、凭证、mock 确定性、脱敏、模板、评审解析、预算、状态机全分支、调度、journal、MCP 三工具（含真实 stdio 端到端）
+npm test   # 101 项：配置 schema、凭证、mock 确定性、脱敏、模板、评审解析、预算、状态机全分支、调度、journal、MCP 三工具（含真实 stdio 端到端）、OpenAI/Anthropic 适配器契约（本地回环 HTTP）
 ```
 
 ## 文档
@@ -67,4 +74,4 @@ TypeScript（strict）+ Node.js ≥ 22 LTS · 官方 `@modelcontextprotocol/sdk`
 
 ## 交付阶段
 
-见基线规范 §11：**0 方案核验 ✓** → **1 核心骨架 ✓** → **2 瀑布引擎 ✓** → **3 MCP 接入 ✓** → 4 真实供应商 → 5 安全与发布
+见基线规范 §11：**0 方案核验 ✓** → **1 核心骨架 ✓** → **2 瀑布引擎 ✓** → **3 MCP 接入 ✓** → **4 真实供应商 ✓（契约级；真实密钥联调待用户）** → 5 安全与发布

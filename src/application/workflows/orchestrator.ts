@@ -23,6 +23,7 @@ import type { ReviewFeedback } from './templates.js';
 import { BudgetGuard } from './budget.js';
 import type { PriceInfo } from './budget.js';
 import { createProvider } from '../../providers/registry.js';
+import { CredentialStore } from '../../credentials/store.js';
 import type { ProviderAdapter, ProviderChatResponse, ProviderError } from '../../providers/types.js';
 import type { BayzeConfig, StepConfig, WorkflowConfig } from '../../config/schema.js';
 import type { RunJournal } from '../../journal/journal.js';
@@ -54,6 +55,7 @@ const RETRY_BACKOFF_CAP_MS = 10_000;
  */
 export class WorkflowOrchestrator {
   private readonly adapters = new Map<string, ProviderAdapter>();
+  private readonly credentials = new CredentialStore();
 
   constructor(
     private readonly cfg: BayzeConfig,
@@ -81,7 +83,7 @@ export class WorkflowOrchestrator {
       if (!pcfg) {
         return err({ code: 'provider_unavailable', message: `step "${step.name}" references provider "${step.provider}" missing from config` });
       }
-      const created = createProvider(step.provider, pcfg);
+      const created = createProvider(step.provider, pcfg, this.credentials);
       if (!created.ok) return err({ code: 'provider_unavailable', message: created.error.message });
       this.adapters.set(step.provider, created.value);
     }

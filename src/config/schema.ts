@@ -38,22 +38,35 @@ const mockProvider = z
   .object({ kind: z.literal('mock'), models: providerModels })
   .strict();
 
+const remoteProviderCommon = {
+  api_key_ref: envRef,
+  /** 明文/本地端点显式 opt-in（基线 §6/§8） */
+  allow_insecure_base_url: z.boolean().optional().default(false),
+  models: providerModels,
+};
+
 const remoteProvider = z
   .object({
     kind: z.literal('openai-compatible'),
     base_url: z.string().url('base_url must be a valid URL'),
-    api_key_ref: envRef,
-    /** 明文/本地端点显式 opt-in（基线 §6/§8） */
-    allow_insecure_base_url: z.boolean().optional().default(false),
-    models: providerModels,
+    ...remoteProviderCommon,
+  })
+  .strict();
+
+const anthropicProvider = z
+  .object({
+    kind: z.literal('anthropic'),
+    base_url: z.string().url('base_url must be a valid URL').optional().default('https://api.anthropic.com'),
+    ...remoteProviderCommon,
   })
   .strict();
 
 // 注意：URL 安全校验在 configSchema 根级 superRefine 中执行
 // （superRefine 会把成员包成 ZodEffects，不能放进 discriminatedUnion）
-export const providerSchema = z.discriminatedUnion('kind', [mockProvider, remoteProvider]);
+export const providerSchema = z.discriminatedUnion('kind', [mockProvider, remoteProvider, anthropicProvider]);
 export type MockProviderConfig = z.infer<typeof mockProvider>;
 export type RemoteProviderConfig = z.infer<typeof remoteProvider>;
+export type AnthropicProviderConfig = z.infer<typeof anthropicProvider>;
 export type ProviderConfig = z.infer<typeof providerSchema>;
 
 const limitsSchema = z
@@ -123,7 +136,7 @@ export const configSchema = z
   .superRefine((cfg, ctx) => {
     // —— 供应商端点安全（基线 §8：默认仅 HTTPS；本地/明文端点需显式 opt-in）——
     for (const [pid, p] of Object.entries(cfg.providers)) {
-      if (p.kind !== 'openai-compatible') continue;
+      if (p.kind === 'mock') continue;
       const u = safeUrl(p.base_url);
       if (!u) continue; // z.string().url() 已标记
       const insecure = u.protocol !== 'https:';

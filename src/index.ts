@@ -11,6 +11,10 @@ export { redactText, redactProviderErrorBody } from './logging/redact.js';
 export { createProvider } from './providers/registry.js';
 export type { RegistryError } from './providers/registry.js';
 export { MockProvider } from './providers/mock/provider.js';
+export { OpenAICompatibleAdapter } from './providers/openai-compatible/adapter.js';
+export { AnthropicAdapter } from './providers/anthropic/adapter.js';
+export { postJson, endpointUrl } from './providers/common/http.js';
+export type { HttpPolicyError, HttpPolicyErrorCode, HttpJsonResponse } from './providers/common/http.js';
 export type {
   ProviderAdapter,
   ProviderChatRequest,
