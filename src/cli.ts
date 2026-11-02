@@ -1,11 +1,17 @@
 #!/usr/bin/env node
-// bayze CLI：config（校验）/ run（执行工作流）/ journal（摘要管理）；只写 journal，其余只读
+// bayze CLI：config（校验）/ run（执行工作流）/ mcp（stdio server）/ journal（摘要管理）
+import { createRequire } from 'node:module';
 import { loadConfig, formatConfigError } from './config/loader.js';
 import { defaultConfigPath, defaultJournalPath } from './config/paths.js';
 import { CredentialStore } from './credentials/store.js';
 import { WorkflowOrchestrator } from './application/workflows/orchestrator.js';
 import { RunJournal } from './journal/journal.js';
+import { McpApp } from './transport/mcp/app.js';
+import { startStdioServer } from './transport/mcp/server.js';
 import type { RunRequest, UserOverrides } from './domain/types.js';
+
+const require_ = createRequire(import.meta.url);
+const VERSION = (require_('../../package.json') as { version: string }).version;
 
 const USAGE = `bayze <command> [options]
 
@@ -13,6 +19,7 @@ commands:
   config check [--config <path>] [--strict]   validate config (read-only)
   config path                                 print the default config path
   run --workflow <id> [options]               execute a workflow (dev/acceptance tool)
+  mcp [--config <path>] [--no-journal]        start the MCP stdio server (for AI clients)
   journal path                                print the default journal path
   journal clear                               delete the journal file
   journal tail [n]                            show the last n run summaries (default 20)
@@ -24,11 +31,23 @@ run options:
   --max-cost <usd>    tighten max cost (overrides may only tighten)
   --max-steps <n>     tighten max steps
   --timeout <ms>      tighten total timeout
+
+mcp options:
+  --config <path>     config file (default: OS user config dir)
+  --no-journal        do not write run summaries
 `;
 
 function fail(message: string, code: 1 | 2): number {
   process.stderr.write(`${message}\n`);
   return code;
+}
+
+/** 基线 §8：禁用 TLS 校验的环境必须拒绝启动 */
+function guardRuntimeEnv(): string | null {
+  if (process.env['NODE_TLS_REJECT_UNAUTHORIZED'] === '0') {
+    return 'NODE_TLS_REJECT_UNAUTHORIZED=0 disables TLS verification; refusing to start (baseline §8)';
+  }
+  return null;
 }
 
 function parseIntArg(args: string[], i: number, flag: string, opts: { integer: boolean; min: number }): { value: number } | { error: string } {
@@ -42,17 +61,46 @@ function parseIntArg(args: string[], i: number, flag: string, opts: { integer: b
 }
 
 async function main(argv: string[]): Promise<number> {
+  const envProblem = guardRuntimeEnv();
+  if (envProblem) return fail(envProblem, 1);
   const [cmd, ...rest] = argv;
   switch (cmd) {
     case 'config':
       return configCmd(rest);
     case 'run':
       return runCmd(rest);
+    case 'mcp':
+      return mcpCmd(rest);
     case 'journal':
       return journalCmd(rest);
     default:
       return fail(USAGE, 2);
   }
+}
+
+/** 启动 MCP stdio server：每客户端一个子进程，无常驻、无监听（基线 §3） */
+async function mcpCmd(args: string[]): Promise<number> {
+  let configPath: string | undefined;
+  let noJournal = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--config') {
+      const v = args[++i];
+      if (v === undefined) return fail(`--config requires a path\n${USAGE}`, 2);
+      configPath = v;
+    } else if (a === '--no-journal') {
+      noJournal = true;
+    } else {
+      return fail(`unknown option: ${a}\n${USAGE}`, 2);
+    }
+  }
+  const loaded = loadConfig(configPath ?? defaultConfigPath());
+  if (!loaded.ok) return fail(formatConfigError(loaded.error), 1);
+  const journal = new RunJournal(noJournal ? null : defaultJournalPath());
+  const app = new McpApp(loaded.value, journal);
+  await startStdioServer(app, { version: VERSION });
+  process.stderr.write(`[bayze] mcp server ready (version ${VERSION}, workflows: ${Object.keys(loaded.value.workflows).join(', ')})\n`);
+  return 0; // 进程保持运行，服务 stdio
 }
 
 function configCmd(args: string[]): number {

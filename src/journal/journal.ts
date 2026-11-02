@@ -87,6 +87,23 @@ export class RunJournal {
     return recs;
   }
 
+  /** 按 runId 从最新往回查找（供 get_run_summary） */
+  findByRunId(runId: string): JournalRecord | undefined {
+    if (!this.filePath || !existsSync(this.filePath)) return undefined;
+    const lines = readFileSync(this.filePath, 'utf8').split('\n').filter((l) => l.trim().length > 0);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (!line) continue;
+      try {
+        const r = JSON.parse(line) as JournalRecord;
+        if (r.runId === runId) return r;
+      } catch {
+        /* 跳过损坏行 */
+      }
+    }
+    return undefined;
+  }
+
   clear(): Result<null, string> {
     if (!this.filePath) return ok(null);
     try {
