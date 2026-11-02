@@ -1,16 +1,20 @@
-# 国际向真实供应商示例 —— OpenAI
+# 国际向真实供应商示例 —— OpenAI + Anthropic
 #
 # 使用前：
 #   export BAYZE_OPENAI_API_KEY=...
+#   export BAYZE_ANTHROPIC_API_KEY=...
 #   node dist/src/cli.js config check --config examples/config.intl.example.yaml --strict
 #   node dist/src/cli.js run --workflow review_then_revise_intl --config examples/config.intl.example.yaml --input "your task"
+#   node dist/src/cli.js run --workflow review_then_revise_cross_intl --config examples/config.intl.example.yaml --input "your task"
 #
 # 重要说明（如实）：
 #   - 端点与模型 ID 为公开形态，仍以官方文档为准（待核验）；
-#   - 价格为「假数据」示例（官方以 USD 计价），请按官方价格页核实替换；
-#   - 与大陆向示例的区别：USD 定价可直接参与硬预算——本示例的 max_cost_usd
-#     是被强制执行的（无需 allow_unknown_price）。Anthropic 形态示例见
-#     examples/config.example.yaml 的 example-anthropic。
+#   - 价格为「假数据」示例（两家均以 USD 计价），请按官方价格页核实替换；
+#   - 与大陆向示例的区别：USD 定价可直接参与硬预算——两个工作流的
+#     max_cost_usd 都是被强制执行的（无需 allow_unknown_price）；
+#   - OpenAI 走 openai-compatible 适配器（Bearer / chat/completions）；
+#     Anthropic 走独立适配器（x-api-key / /v1/messages，错误体系不同），
+#     base_url 默认 https://api.anthropic.com，可省略；
 #   - 使用需自行具备相应的网络与支付环境。
 
 version: 1
@@ -30,6 +34,17 @@ providers:
         pricing: { currency: USD, input_per_1m_tokens: 0.15, output_per_1m_tokens: 0.60 }
       - id: gpt-4o
         pricing: { currency: USD, input_per_1m_tokens: 2.50, output_per_1m_tokens: 10.00 }
+
+  anthropic:
+    kind: anthropic
+    api_key_ref: "env:BAYZE_ANTHROPIC_API_KEY"
+    # base_url 默认 https://api.anthropic.com（如走自设代理再显式覆盖）
+    models:
+      - id: claude-sonnet-4-5
+        # 假数据：以官方价格页为准
+        pricing: { currency: USD, input_per_1m_tokens: 3.00, output_per_1m_tokens: 15.00 }
+      - id: claude-haiku-4-5
+        pricing: { currency: USD, input_per_1m_tokens: 1.00, output_per_1m_tokens: 5.00 }
 
 workflows:
   # 同厂分级复核：轻量模型起草 → 强模型评审 → 轻量模型按意见修订
@@ -52,6 +67,38 @@ workflows:
       - name: review
         provider: openai
         model: gpt-4o
+        input: review_template
+        timeout_ms: 45000
+        run_if: always
+        gate: structured_review
+        review_schema: [verdict, reasons]
+      - name: revise
+        provider: openai
+        model: gpt-4o-mini
+        input: revision_template
+        timeout_ms: 45000
+        run_if: review_verdict_is_revise
+
+  # 跨厂商复核：OpenAI 起草 → Claude 评审 → OpenAI 修订（独立适配器边界演示）
+  review_then_revise_cross_intl:
+    strategy: waterfall
+    limits:
+      max_steps: 3
+      total_timeout_ms: 120000
+      max_output_tokens: 8000
+      max_cost_usd: 0.15      # 跨厂商 USD 硬预算同样生效
+      max_retries_per_step: 1
+    steps:
+      - name: draft
+        provider: openai
+        model: gpt-4o-mini
+        input: original
+        timeout_ms: 45000
+        max_retries: 1
+        evaluate: [non_empty, { max_chars: 20000 }]
+      - name: review
+        provider: anthropic
+        model: claude-sonnet-4-5
         input: review_template
         timeout_ms: 45000
         run_if: always
