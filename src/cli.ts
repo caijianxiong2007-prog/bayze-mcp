@@ -8,6 +8,7 @@ import { WorkflowOrchestrator } from './application/workflows/orchestrator.js';
 import { RunJournal } from './journal/journal.js';
 import { McpApp } from './transport/mcp/app.js';
 import { startStdioServer } from './transport/mcp/server.js';
+import { guardRuntimeEnv } from './cli-guard.js';
 import type { RunRequest, UserOverrides } from './domain/types.js';
 
 const require_ = createRequire(import.meta.url);
@@ -40,14 +41,6 @@ mcp options:
 function fail(message: string, code: 1 | 2): number {
   process.stderr.write(`${message}\n`);
   return code;
-}
-
-/** 基线 §8：禁用 TLS 校验的环境必须拒绝启动 */
-function guardRuntimeEnv(): string | null {
-  if (process.env['NODE_TLS_REJECT_UNAUTHORIZED'] === '0') {
-    return 'NODE_TLS_REJECT_UNAUTHORIZED=0 disables TLS verification; refusing to start (baseline §8)';
-  }
-  return null;
 }
 
 function parseIntArg(args: string[], i: number, flag: string, opts: { integer: boolean; min: number }): { value: number } | { error: string } {

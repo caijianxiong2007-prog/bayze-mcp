@@ -46,3 +46,18 @@
 | T8 | 第 4 条（体积/并发/重试/时长上限） |
 | T10 | 第 7 条（未知价格 fail-closed） |
 | T9 | 第 9 条（README 说明数据去向与清除） |
+
+## 6. 验证状态（阶段 5 终验）
+
+| 威胁 | 缓解实现 | 验证证据 |
+|---|---|---|
+| T1 客户端提示注入 | run_if 封闭枚举、无文件/shell/代理工具 | `mcp-server.test.ts`（仅三工具）、`state-machine` 实现 |
+| T2 步骤间注入 | 模板 UNTRUSTED 分隔、步骤无工具权限 | `templates.test.ts`（不可信标记断言） |
+| T3 final_output 注入 | `finalOutputUntrusted: true` 标注 | `mcp-server.test.ts` |
+| T4 密钥泄露 | 脱敏层 + 供应商错误体过滤 + invalid_ref 不携带原文 | `redact.test.ts`、`openai-adapter.test.ts`（401 伪密钥）、`credentials.test.ts` |
+| T5 供应链 | 3 个直接运行时依赖、lockfile、audit=0 | `docs/dependencies.md`、阶段 5 记录 |
+| T6 TLS/明文端点 | schema 强校验 + 显式 opt-in + TLS 禁用环境拒启 + 重定向仅 HTTPS 同主机 | `config-schema.test.ts`、`cli-guard.test.ts`、`openai-adapter.test.ts`（跨主机重定向拒绝） |
+| T7 DNS rebinding/代理 | 已接受风险记录 | 本节（P1 HTTP API 阶段重评） |
+| T8 资源耗尽 | 输入 100k、输出 max_tokens、并发 2/队列 4、响应 2MB、超时与重试上限 | orchestrator/mcp/budget/openai 各测试 |
+| T9 journal 增长/敏感内容 | 摘要 only、7 天/10MB、--no-journal、clear | `journal.test.ts` + 阶段 5 内容检查 |
+| T10 预算突破 | 保守预估 + 原子预留 + fail-closed | `budget.test.ts`、`orchestrator.test.ts` |

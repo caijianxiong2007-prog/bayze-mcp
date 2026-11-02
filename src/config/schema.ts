@@ -115,14 +115,14 @@ const runtimeSchema = z
     max_queue_size: z.number().int().min(0).default(4),
   })
   .strict()
-  .default({});
+  .prefault({}); // zod v4：先以 {} 作为输入过 schema，由字段默认值补齐
 export type RuntimeConfig = z.infer<typeof runtimeSchema>;
 
 export const configSchema = z
   .object({
     version: z.literal(CONFIG_VERSION, {
-      errorMap: (issue) => {
-        if (issue.code === 'invalid_type') {
+      error: (issue) => {
+        if (issue.input === undefined) {
           return { message: `version is required and must be the number ${CONFIG_VERSION}` };
         }
         return { message: `unsupported config version: this build supports version ${CONFIG_VERSION} only (migrations TBD)` };

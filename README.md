@@ -2,7 +2,7 @@
 
 本地运行、可审计、可扩展的开源 AI 模型路由核心。通过 MCP stdio 接入支持工具调用的 AI 客户端，首期提供「草稿 → 必经结构化评审 → 按需修订」的 `review_then_revise` 瀑布工作流。
 
-> 状态：**阶段 4（真实供应商适配器）已完成（契约级验证）** —— OpenAI 兼容 + Anthropic Messages 双适配器就绪（错误映射、用量、能力如实呈现），经本地回环 HTTP 契约测试覆盖全部错误路径；真实供应商联调需用户自带密钥（见下）。用户自带模型凭证（BYOK）；默认无遥测、无云端组件、无本地监听。
+> 状态：**P0 全部阶段（0–5）完成** —— 103 项测试全绿；`npm audit` 0 漏洞；`npm ci` 干净安装复现通过。待人工项见[验收状态矩阵](docs/acceptance-status.md)（真实客户端注册核验、真实供应商在线联调、Linux/Windows 平台实测）。许可证 MIT。用户自带模型凭证（BYOK）；默认无遥测、无云端组件、无本地监听。
 
 ## 环境要求
 
@@ -62,11 +62,11 @@ npm test   # 101 项：配置 schema、凭证、mock 确定性、脱敏、模板
 ## 文档
 
 - [实施基线规范 v0.3](docs/baseline-spec.md) —— 全部实施约束与验收清单的单一事实来源
-- [架构与数据流](docs/architecture.md)
-- [威胁模型](docs/threat-model.md)
+- [架构与数据流](docs/architecture.md) · [隐私说明](docs/privacy.md) · [威胁模型](docs/threat-model.md)
+- [依赖许可清单](docs/dependencies.md) · [验收状态矩阵](docs/acceptance-status.md) · [Changelog](CHANGELOG.md)
 - [ADR-0001 运行时与工具链](docs/adr/0001-runtime-and-tooling.md)
 - [MCP 客户端接入](docs/mcp-clients.md)
-- [AGENTS.md](AGENTS.md) —— 仓库工作规则
+- 许可证 [MIT](LICENSE) · [贡献指南](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) —— 仓库工作规则
 
 ## 技术栈（ADR-0001）
 
@@ -74,4 +74,4 @@ TypeScript（strict）+ Node.js ≥ 22 LTS · 官方 `@modelcontextprotocol/sdk`
 
 ## 交付阶段
 
-见基线规范 §11：**0 方案核验 ✓** → **1 核心骨架 ✓** → **2 瀑布引擎 ✓** → **3 MCP 接入 ✓** → **4 真实供应商 ✓（契约级；真实密钥联调待用户）** → 5 安全与发布
+见基线规范 §11：**0 方案核验 ✓** → **1 核心骨架 ✓** → **2 瀑布引擎 ✓** → **3 MCP 接入 ✓** → **4 真实供应商 ✓（契约级）** → **5 安全与发布 ✓**
