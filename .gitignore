@@ -1,0 +1,12 @@
+# 构建产物与依赖
+node_modules/
+dist/
+
+# 工具内部目录（不属于本项目）
+.mimosa/
+.v2c/
+.video_agent/
+
+# 杂项
+*.log
+.DS_Store

@@ -1,0 +1,28 @@
+{
+  "name": "bayze-mcp",
+  "version": "0.1.0",
+  "description": "Bayze — 本地运行、可审计的开源 AI 模型路由核心（MCP stdio）",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "bayze": "dist/src/cli.js"
+  },
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/tests/unit/",
+    "check": "node dist/src/cli.js config check"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

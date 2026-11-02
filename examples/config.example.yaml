@@ -1,0 +1,92 @@
+# Bayze 配置示例 —— 全部为假数据；密钥只允许 env: 引用（基线 §6/§8）
+version: 1
+
+runtime:
+  max_concurrency: 2   # 进程级：最大并发 run
+  max_queue_size: 4    # 进程级：最大排队 run
+
+providers:
+  # mock 供应商：无需密钥，可完整演练全部路径（基线 §5）
+  mock-main:
+    kind: mock
+    models:
+      - id: mock-success
+        pricing: { currency: USD, input_per_1m_tokens: 0.0, output_per_1m_tokens: 0.0 }
+      - id: mock-review-accept
+        pricing: { currency: USD, input_per_1m_tokens: 0.0, output_per_1m_tokens: 0.0 }
+      - id: mock-review-revise
+        pricing: { currency: USD, input_per_1m_tokens: 0.0, output_per_1m_tokens: 0.0 }
+      - id: mock-empty
+      - id: mock-timeout
+      - id: mock-rate-limit
+      - id: mock-auth
+      - id: mock-network
+      - id: mock-hang
+
+  # OpenAI 兼容供应商示例（假数据；真实使用时替换 base_url 与模型 id）
+  example-remote:
+    kind: openai-compatible
+    base_url: "https://provider.example/v1"
+    api_key_ref: "env:BAYZE_EXAMPLE_API_KEY"
+    models:
+      - id: "example-model"
+        capabilities_hint: [chat, json]   # 仅提示，不作为路由真值
+        pricing: { currency: USD, input_per_1m_tokens: 0.10, output_per_1m_tokens: 0.40 }
+    # 如需连接本地模型端点（如 http://127.0.0.1:11434/v1），必须显式声明：
+    # allow_insecure_base_url: true
+
+workflows:
+  # 首发工作流（基线 §7）：草稿 → 必经结构化评审 → 拒绝时修订一次
+  review_then_revise_mock:
+    strategy: waterfall
+    limits:
+      max_steps: 3
+      total_timeout_ms: 90000
+      max_output_tokens: 5000
+      max_cost_usd: 0.05
+      allow_unknown_price: false
+      max_retries_per_step: 1
+    steps:
+      - name: draft
+        provider: mock-main
+        model: mock-success
+        input: original
+        timeout_ms: 30000
+        max_retries: 1
+        evaluate: [non_empty, { max_chars: 12000 }]
+      - name: review
+        provider: mock-main
+        model: mock-review-accept
+        input: review_template
+        timeout_ms: 30000
+        run_if: always
+        gate: structured_review
+        review_schema: [verdict, reasons]
+      - name: revise
+        provider: mock-main
+        model: mock-review-revise
+        input: revision_template
+        timeout_ms: 30000
+        run_if: review_verdict_is_revise
+
+  # 普通 failover 瀑布示例：仅在确定性检查失败时升级（无质量门）
+  plain_waterfall_mock:
+    strategy: waterfall
+    limits:
+      max_steps: 2
+      total_timeout_ms: 60000
+      max_output_tokens: 5000
+      max_retries_per_step: 1
+    steps:
+      - name: primary
+        provider: mock-main
+        model: mock-success
+        input: original
+        timeout_ms: 25000
+        evaluate: [non_empty, { max_chars: 12000 }]
+      - name: fallback
+        provider: mock-main
+        model: mock-success
+        input: original
+        timeout_ms: 25000
+        run_if: on_check_failure
