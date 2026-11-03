@@ -6,7 +6,7 @@
 
 | 条目 | 状态 | 证据 |
 |---|---|---|
-| 全新环境可按文档安装、启动和注册 MCP server | ✅（darwin arm64） | `npm ci`（lockfile 干净安装）→ `npm run build` → `config check` 通过（阶段 5 复现）；MCP 注册见 `docs/mcp-clients.md` |
+| 全新环境可按文档安装、启动和注册 MCP server | ✅（darwin arm64） | `npm ci`（lockfile 干净安装）→ `npm run build` → `config check` 通过（阶段 5 复现）；MCP 注册见 `docs/mcp-clients.md`。**2026-11-03 真实客户端注册核验通过**：Cherry Studio（SQLite 版）经 `mcp_server` 表注册 `bayze`（stdio + `zsh -c` 包装加载 `~/.zshenv` 密钥），应用启动即自动拉起 MCP 进程（PID 级证据）；工具发现与调用此前已由 SDK stdio 端到端测试覆盖，对话级使用待用户在 Cherry 配置对话模型后自然验证 |
 | `list_workflows` 不泄露密钥或本地无关信息 | ✅ | `mcp-server.test.ts`：无 api_key_ref / base_url / 端点字符串 |
 | 主模型通过校验时不发生意外升级 | ✅ | `orchestrator.test.ts`「accept：draft 1 次、review 1 次、revise 不调用」 |
 | `review_then_revise`：reviewer 必经；accept 不修订；revise 恰好一次 | ✅ | 同上 + 「revise：修订恰好一次」（调用计数 3） |
