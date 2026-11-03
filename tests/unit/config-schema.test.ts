@@ -1,4 +1,6 @@
 import { rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -144,7 +146,7 @@ test('步骤超时不得超过整体超时', () => {
 });
 
 test('YAML 解析失败返回 parse_failed', () => {
-  const tmp = `/tmp/bayze-unit-${process.pid}-bad.yaml`;
+  const tmp = join(tmpdir(), `bayze-unit-${process.pid}-bad.yaml`);
   writeFileSync(tmp, 'providers: [unclosed', 'utf8');
   try {
     const loaded = loadConfig(tmp);
@@ -156,7 +158,7 @@ test('YAML 解析失败返回 parse_failed', () => {
 });
 
 test('配置文件不存在返回 not_found', () => {
-  const loaded = loadConfig('/tmp/bayze-unit-definitely-missing.yaml');
+  const loaded = loadConfig(join(tmpdir(), 'bayze-unit-definitely-missing.yaml'));
   assert.equal(loaded.ok, false);
   if (!loaded.ok) assert.equal(loaded.error.kind, 'not_found');
 });
