@@ -38,7 +38,7 @@
 | 安装包/二进制校验和 | deferred | 基线 §11 阶段 5 完成定义明示：正式二进制签名、校验和与 SBOM 在正式发布阶段完成 |
 | 开源许可证、依赖许可、隐私说明、威胁模型、贡献规则 | ✅ | MIT（`LICENSE`）；依赖许可 `docs/dependencies.md`；隐私 `docs/privacy.md`；威胁模型 `docs/threat-model.md`；贡献规则 `CONTRIBUTING.md` |
 | 无未经验证的表述 | ✅ | 全文档仅声明已验证能力；供应商定价/API 区域均标注待核验 |
-| 真实供应商错误映射、用量、能力如实呈现 | ✅ | 契约测试 18 项；**2026-11-03 在线联调通过**：DeepSeek 起草 → 通义 qwen-plus 结构化评审（accept，3 条理由）→ 豆包 revise 正确跳过；用量如实呈现（13/108 + 286/58 tokens），CNY 费用按设计提示无法估算。revise 在线路径未触发（契约级已验，待自然发生） |
+| 真实供应商错误映射、用量、能力如实呈现 | ✅ | 契约测试 18 项；**2026-11-03 在线联调通过**：DeepSeek 起草 → 通义 qwen-plus 结构化评审（accept，3 条理由）→ 豆包 revise 正确跳过；用量如实呈现（13/108 + 286/58 tokens），CNY 费用按设计提示无法估算。**同日国际侧在线验证补全**：Anthropic 独立适配器（claude-sonnet-4-5 评审，estimatedCost $0.002739）、跨境组合（DeepSeek→Claude→豆包，runId fe56c254）、纯国际 USD 预算路径（gpt-4o-mini→gpt-4o，合计 ~$0.001）、以及 Anthropic 地域 403 / OpenAI 连接失败的错误映射在线实证（fail-closed 行为正确）。revise 在线路径未触发（契约级已验，待自然发生） |
 
 ## 阶段 5 安全执行记录
 
