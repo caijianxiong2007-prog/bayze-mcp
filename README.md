@@ -8,6 +8,24 @@
 
 - Node.js ≥ 22 LTS
 
+## 安装
+
+已发布 npm（包名 `bayze-mcp`，命令 `bayze`），三种方式任选：
+
+```bash
+# 方式 1：npx 直接跑（推荐，无需安装）
+npx -y bayze-mcp mcp --config /path/to/your/config.yaml
+
+# 方式 2：全局安装
+npm install -g bayze-mcp
+bayze config check --config /path/to/your/config.yaml
+
+# 方式 3：从源码（本仓库）
+git clone <repo-url> && cd bayze-mcp && npm ci && npm run build
+```
+
+> 密钥只放环境变量（`env:` 引用）；示例配置见 [examples/](examples/)（大陆向 DeepSeek/DashScope/火山方舟 + 国际向 OpenAI/Anthropic，价格均为待核验假数据）。
+
 ## 快速开始（阶段 1：配置校验，只读）
 
 ```bash

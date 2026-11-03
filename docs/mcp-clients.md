@@ -12,24 +12,25 @@ Bayze 以 MCP stdio server 形式接入 AI 客户端：**每个客户端拉起�
 
 三工具：`list_workflows`（列出已配置工作流）、`run_workflow`（执行）、`get_run_summary`（查询运行摘要）。
 
+已发布 npm（`bayze-mcp`），推荐 npx 形态：
+
 ```json
 {
   "mcpServers": {
     "bayze": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/bayze/dist/src/cli.js",
-        "mcp",
-        "--config", "/absolute/path/to/your/config.yaml"
-      ]
+      "command": "npx",
+      "args": ["-y", "bayze-mcp", "mcp", "--config", "/absolute/path/to/your/config.yaml"]
     }
   }
 }
 ```
 
-- 路径必须使用**绝对路径**；
+或全局安装后直接用命令：`"command": "bayze"`、`"args": ["mcp", "--config", "..."]`。
+
+从源码运行（开发形态）：`"command": "node"`、`"args": ["/absolute/path/to/bayze/dist/src/cli.js", "mcp", "--config", "..."]`（路径必须**绝对路径**）。
+
 - 加 `--no-journal` 可完全不写运行摘要；
-- 未来发布 npm 包后可改为 `npx -y bayze-mcp mcp --config ...`（待发布，勿提前假设可用）。
+- 密钥从环境变量读取——若客户端不经 shell 拉起进程，可用 `zsh -c` 包装以加载 `~/.zshenv`（见下文各客户端示例与 `docs/privacy.md`）。
 
 ## 各客户端示例
 
