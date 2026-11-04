@@ -46,3 +46,12 @@
 - 密钥形态扫描（sk-ant-/ghp_/xox/PRIVATE KEY/长 sk-）：0 命中
 - `npm audit`：zod 高危公告（GHSA-mrhx-c7xc-m3w5）→ 已升级 zod v4.6.7 并全量回归（101+2 测试全绿），audit 归零
 - `npm ci` 干净安装 + 构建 + config check：通过
+
+## 0.2.0 双接入模式验收（基线 v0.4.1 §12 新增项）
+
+| 条目 | 状态 | 证据 |
+|---|---|---|
+| Bayze API 路径：网站注册/充值/生成 Key/真实推理/扣费核对 | ✅ | 2026-11-04 阶段 4b 通过：模型目录 53 个（`/v1/models`）；三步全链路 runId `e1ba75e1`（DeepSeek 起草 → Claude Haiku 评审 **revise** → DeepSeek 修订）；每步 `mode: bayze_api`；usage/estimatedCost 如实（~$0.00086）；账单警告常驻；Key 仅 `env:` 引用 |
+| 同一工作流可使用 Bayez API Key；每步清晰展示模式与模型；绝不静默切换 | ✅ | 配置同时含 6 个 provider（byok + bayze_api）；每步 `mode` 由 provider 静态派生，结构性不存在运行中切换 |
+| 401 错误映射 | ✅ | Bayze API 返回扁平错误体 `{"error":"..."}` （非标准 OpenAI 嵌套格式）；适配器按 HTTP 状态码映射 401→`auth`，格式兼容验证通过 |
+| **revise 在线路径首次自然触发** | ✅ | 上述 runId `e1ba75e1` 中 Claude Haiku verdict=revise（理由：「一句话」任务但草稿结构过于复杂），DeepSeek 修订一步完成——**全产品最后一个未在线验证的策略分支就此闭环** |
