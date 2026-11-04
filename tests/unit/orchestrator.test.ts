@@ -258,6 +258,43 @@ test('放宽型 override 被钳制并告警', async () => {
   assert.equal(res.status, 'succeeded');
 });
 
+test('bayze_api 模式：每步带 mode=bayze_api + 账单警告（种子 mock，零网络）', async () => {
+  const bayze = {
+    kind: 'openai-compatible',
+    mode: 'bayze_api',
+    base_url: 'https://app.lanwealth.com/v1',
+    api_key_ref: 'env:BAYZE_API_KEY',
+    models: [
+      { id: 'mock-success', pricing: { currency: 'USD', input_per_1m_tokens: 0, output_per_1m_tokens: 0 } },
+      { id: 'mock-review-accept', pricing: { currency: 'USD', input_per_1m_tokens: 0, output_per_1m_tokens: 0 } },
+    ],
+  };
+  const c = cfg(
+    { w: { steps: [
+      { name: 'draft', provider: 'bayze', model: 'mock-success', input: 'original', timeout_ms: 1000, evaluate: ['non_empty'] },
+      { name: 'review', provider: 'bayze', model: 'mock-review-accept', input: 'review_template', timeout_ms: 1000, run_if: 'always', gate: 'structured_review', review_schema: ['verdict', 'reasons'] },
+      { name: 'revise', provider: 'bayze', model: 'mock-success', input: 'revision_template', timeout_ms: 1000, run_if: 'review_verdict_is_revise' },
+    ] } },
+    { mockmain: { kind: 'mock', models: [{ id: 'mock-success' }] }, bayze },
+  );
+  const orch = new WorkflowOrchestrator(c, new Map<string, ProviderAdapter>([['bayze', new MockProvider('bayze')]]));
+  const r = await orch.run({ workflowId: 'w', input: 'hello' }, { signal: new AbortController().signal });
+  assert.ok(r.ok);
+  if (r.ok) {
+    const res = r.value;
+    assert.equal(res.status, 'succeeded');
+    assert.ok(res.steps.every((s) => s.mode === 'bayze_api'), '每步 mode=bayze_api');
+    assert.ok(res.warnings.some((w) => /app\.lanwealth\.com 账单为准/.test(w)), JSON.stringify(res.warnings));
+  }
+});
+
+test('byok 模式（默认）：无账单警告', async () => {
+  const res = await run(cfg({ w: { steps: rtr() } }), 'w');
+  assert.equal(res.status, 'succeeded');
+  assert.ok(res.steps.every((s) => s.mode === 'byok'));
+  assert.ok(!res.warnings.some((w) => /账单为准/.test(w)));
+});
+
 test('未知工作流：结构化 setup 错误', async () => {
   const orch = new WorkflowOrchestrator(cfg({ w: { steps: rtr() } }));
   const r = await orch.run({ workflowId: 'ghost', input: 'x' }, { signal: new AbortController().signal });

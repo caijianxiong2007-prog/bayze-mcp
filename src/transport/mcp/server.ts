@@ -25,14 +25,19 @@ export function workflowsSummary(cfg: BayzeConfig): unknown {
       allowUnknownPrice: wf.limits.allow_unknown_price,
       maxRetriesPerStep: wf.limits.max_retries_per_step,
     },
-    steps: wf.steps.map((s) => ({
-      name: s.name,
-      provider: s.provider,
-      model: s.model,
-      input: s.input,
-      ...(s.run_if !== undefined ? { runIf: s.run_if } : {}),
-      ...(s.gate !== undefined ? { gate: s.gate } : {}),
-    })),
+    steps: wf.steps.map((s) => {
+      const p = cfg.providers[s.provider];
+      const mode = p ? p.mode : 'byok';
+      return {
+        name: s.name,
+        provider: s.provider,
+        model: s.model,
+        mode,
+        input: s.input,
+        ...(s.run_if !== undefined ? { runIf: s.run_if } : {}),
+        ...(s.gate !== undefined ? { gate: s.gate } : {}),
+      };
+    }),
   }));
 }
 

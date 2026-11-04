@@ -35,13 +35,15 @@ const modelSchema = z
 const providerModels = z.array(modelSchema).min(1, 'provider needs at least one model');
 
 const mockProvider = z
-  .object({ kind: z.literal('mock'), models: providerModels })
+  .object({ kind: z.literal('mock'), mode: z.enum(['byok', 'bayze_api']).optional().default('byok'), models: providerModels })
   .strict();
 
 const remoteProviderCommon = {
   api_key_ref: envRef,
   /** 明文/本地端点显式 opt-in（基线 §6/§8） */
   allow_insecure_base_url: z.boolean().optional().default(false),
+  /** 接入模式（基线 v0.4.1 §6）：bayze_api 须满足主机 allowlist 与 kind 约束 */
+  mode: z.enum(['byok', 'bayze_api']).optional().default('byok'),
   models: providerModels,
 };
 
@@ -68,6 +70,9 @@ export type MockProviderConfig = z.infer<typeof mockProvider>;
 export type RemoteProviderConfig = z.infer<typeof remoteProvider>;
 export type AnthropicProviderConfig = z.infer<typeof anthropicProvider>;
 export type ProviderConfig = z.infer<typeof providerSchema>;
+
+/** bayze_api 模式的 P0 固定主机白名单（基线 v0.4.1 §6 / ADR-0002 D3） */
+export const BAYZE_API_ALLOWED_HOSTS = ['app.lanwealth.com'] as const;
 
 const limitsSchema = z
   .object({
@@ -137,6 +142,24 @@ export const configSchema = z
     // —— 供应商端点安全（基线 §8：默认仅 HTTPS；本地/明文端点需显式 opt-in）——
     for (const [pid, p] of Object.entries(cfg.providers)) {
       if (p.kind === 'mock') continue;
+      // —— bayze_api 模式约束（基线 v0.4.1 §6 / ADR-0002 D3）——
+      if (p.mode === 'bayze_api') {
+        if (p.kind !== 'openai-compatible') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['providers', pid, 'kind'],
+            message: 'mode: bayze_api requires kind: openai-compatible',
+          });
+        }
+        const bu = safeUrl(p.base_url);
+        if (!bu || !BAYZE_API_ALLOWED_HOSTS.includes(bu.hostname as (typeof BAYZE_API_ALLOWED_HOSTS)[number])) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['providers', pid, 'base_url'],
+            message: `mode: bayze_api base_url host must be ${BAYZE_API_ALLOWED_HOSTS.join(' / ')} (P0 allowlist; mirrors/region endpoints are P1)`,
+          });
+        }
+      }
       const u = safeUrl(p.base_url);
       if (!u) continue; // z.string().url() 已标记
       const insecure = u.protocol !== 'https:';

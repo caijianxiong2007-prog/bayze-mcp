@@ -38,6 +38,9 @@ export type TriggerReason =
   | `check_failed:${string}`
   | `provider_error:${string}`;
 
+/** 接入模式（基线 v0.4.1 §5/§6）：每步展示，禁止无提示切换 */
+export type AccessMode = 'byok' | 'bayze_api';
+
 export interface Usage {
   inputTokens: number;
   outputTokens: number;
@@ -68,6 +71,8 @@ export interface StepResult {
   stepName: string;
   providerId: string;
   modelId: string;
+  /** 接入模式（byok | bayze_api），由 provider 配置派生（基线 v0.4.1 §6） */
+  mode?: AccessMode;
   status: RunStatus;
   startedAt: string; // ISO-8601
   durationMs: number;

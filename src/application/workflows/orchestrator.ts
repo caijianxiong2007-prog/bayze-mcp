@@ -3,6 +3,7 @@ import { err } from '../../domain/errors.js';
 import type { Result } from '../../domain/errors.js';
 import { redactText } from '../../logging/redact.js';
 import type {
+  AccessMode,
   CheckResult,
   ProviderErrorCode,
   RunRequest,
@@ -107,6 +108,12 @@ export class WorkflowOrchestrator {
     let step0CheckFailure = false;
     let executed = 0;
     let capSkipped = 0;
+    let usedBayzeApi = false;
+
+    const modeOf = (providerId: string): AccessMode => {
+      const p = this.cfg.providers[providerId];
+      return p && p.kind !== 'mock' ? p.mode : 'byok';
+    };
 
     for (let idx = 0; idx < wf.steps.length; idx++) {
       const step = wf.steps[idx];
@@ -147,6 +154,8 @@ export class WorkflowOrchestrator {
       }
 
       executed++;
+      const stepMode = modeOf(step.provider);
+      if (stepMode === 'bayze_api') usedBayzeApi = true;
       opts.onProgress?.({ step: step.name, status: 'running' });
       const stepStart = Date.now();
       const promptChars = (prompt.value.system ?? '').length + prompt.value.user.length;
@@ -265,6 +274,14 @@ export class WorkflowOrchestrator {
     if (capSkipped > 0) {
       warnings.push(`maxSteps=${maxSteps} truncated ${capSkipped} configured step(s)`);
     }
+    if (usedBayzeApi) {
+      warnings.push('Bayze API 模式：本地费用仅为估算，实际扣费以 https://app.lanwealth.com 账单为准');
+    }
+
+    // 每步展示接入模式（基线 v0.4.1 §5/§6）
+    for (const sr of stepResults) {
+      sr.mode = modeOf(sr.providerId);
+    }
 
     if (stopReason === undefined) {
       if (opts.signal.aborted) stopReason = 'cancelled';
@@ -292,6 +309,7 @@ export class WorkflowOrchestrator {
           name: s.stepName,
           providerId: s.providerId,
           modelId: s.modelId,
+          mode: s.mode,
           status: s.status,
           durationMs: s.durationMs,
           usage: s.usage,

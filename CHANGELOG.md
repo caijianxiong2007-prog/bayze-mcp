@@ -1,6 +1,14 @@
 # Changelog
 
-本项目遵循基线规范 v0.3（`docs/baseline-spec.md`）的阶段交付。
+本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
+
+## 0.2.0（2026-11-04）—— 双接入模式（基线 v0.4.1）
+
+- **Bayze 统一 API provider**：provider 新增 `mode: bayze_api`（缺省 `byok`，向后兼容、无迁移）；主机 P0 allowlist 固定 `app.lanwealth.com`；`kind` 必须为 `openai-compatible`（schema 校验级）。ADR-0002 记录全部取舍。
+- **逐步模式展示**：`StepResult` / journal 步骤摘要 / `list_workflows` 均新增 `mode`（byok | bayze_api）；同一工作流可混用两模式，每步明确标注，结构性不存在运行中切换。
+- **账单口径警告**：凡 run 含 bayze_api 步骤，结果常驻警告「实际扣费以 app.lanwealth.com 账单为准」；本地 pricing 仅作估算。
+- 文档：隐私说明新增双路径数据流（含禁用表述清单）；威胁模型 T11；Bayze API 模式示例 `examples/config.bayze.example.yaml`（模型 id 占位待核验）。
+- 遗留：阶段 4b「Bayze API 流程核验」（网站注册/充值/Key 生成/模型目录/真实调用/扣费核对）待项目方配合执行。
 
 ## 0.1.0（2026-11-02）
 

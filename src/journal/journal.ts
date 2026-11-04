@@ -12,6 +12,8 @@ export interface JournalStepSummary {
   name: string;
   providerId: string;
   modelId: string;
+  /** 接入模式（基线 v0.4.1 §6） */
+  mode?: 'byok' | 'bayze_api';
   status: string;
   durationMs: number;
   usage?: Usage;

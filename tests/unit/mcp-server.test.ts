@@ -101,14 +101,15 @@ test('工具发现：恰好三个工具', async () => {
   }
 });
 
-test('list_workflows：可见工作流，不泄露 api_key_ref / base_url', async () => {
+test('list_workflows：可见工作流，不泄露 api_key_ref / base_url；每步含接入模式', async () => {
   const dir = tmpJournal();
   try {
     const { client, close } = await makeClient(fixtureConfig(), dir);
     const res = await callTool(client, 'list_workflows', {});
     const text = res.content?.[0]?.text ?? '';
-    const payload = JSON.parse(text) as { workflows: Array<{ id: string }> };
+    const payload = JSON.parse(text) as { workflows: Array<{ id: string; steps: Array<{ mode?: string }> }> };
     assert.ok(payload.workflows.some((w) => w.id === 'w'));
+    assert.ok(payload.workflows.every((w) => w.steps.every((s) => s.mode === 'byok')));
     assert.ok(!text.includes('api_key_ref'));
     assert.ok(!text.includes('base_url'));
     assert.ok(!text.includes('provider.example'));

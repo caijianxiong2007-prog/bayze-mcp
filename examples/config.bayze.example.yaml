@@ -1,0 +1,67 @@
+# Bayze 统一 API 模式示例（基线 v0.4.1 / ADR-0002）
+#
+# 使用前：
+#   1. 打开 https://app.lanwealth.com 注册/登录、充值，生成 API Key（网站操作，插件不接触密码）
+#   2. export BAYZE_API_KEY=...        （密钥只进环境变量）
+#   3. node dist/src/cli.js config check --config examples/config.bayze.example.yaml --strict
+#   4. node dist/src/cli.js run --workflow review_then_revise_bayze --config examples/config.bayze.example.yaml --input "任务"
+#
+# 重要说明（如实）：
+#   - 模型 id 必须来自平台当前开放目录（待核验：以 app.lanwealth.com 模型列表为准）；
+#   - 本示例中的 pricing 为假数据，仅用于本地预算估算；平台可能按点数/套餐/价格表计费，
+#     实际扣费以 app.lanwealth.com 账单为准（每次运行结果都会带此警告）；
+#   - Bayze API 模式下，请求发送到 Bayze 服务端并由其转发至实际模型供应商
+#     （不宣称"请求只在本机处理"）；
+#   - mode: bayze_api 的 base_url 主机当前固定为 app.lanwealth.com（P0 allowlist）。
+
+version: 1
+
+runtime:
+  max_concurrency: 2
+  max_queue_size: 4
+
+providers:
+  bayze:
+    mode: bayze_api
+    kind: openai-compatible
+    base_url: "https://app.lanwealth.com/v1"
+    api_key_ref: "env:BAYZE_API_KEY"
+    models:
+      # 以下模型 id 为占位假数据：使用前以平台开放目录为准（待核验）
+      - id: "bayze-draft-model"
+        pricing: { currency: USD, input_per_1m_tokens: 0.5, output_per_1m_tokens: 1.5 }
+      - id: "bayze-review-model"
+        pricing: { currency: USD, input_per_1m_tokens: 1.0, output_per_1m_tokens: 3.0 }
+
+workflows:
+  review_then_revise_bayze:
+    strategy: waterfall
+    limits:
+      max_steps: 3
+      total_timeout_ms: 120000
+      max_output_tokens: 8000
+      max_cost_usd: 0.10
+      allow_unknown_price: false
+      max_retries_per_step: 1
+    steps:
+      - name: draft
+        provider: bayze
+        model: "bayze-draft-model"
+        input: original
+        timeout_ms: 45000
+        max_retries: 1
+        evaluate: [non_empty, { max_chars: 20000 }]
+      - name: review
+        provider: bayze
+        model: "bayze-review-model"
+        input: review_template
+        timeout_ms: 45000
+        run_if: always
+        gate: structured_review
+        review_schema: [verdict, reasons]
+      - name: revise
+        provider: bayze
+        model: "bayze-draft-model"
+        input: revision_template
+        timeout_ms: 45000
+        run_if: review_verdict_is_revise
