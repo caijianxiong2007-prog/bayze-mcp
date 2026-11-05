@@ -4,9 +4,9 @@
 
 ![Bayze 终端演示](docs/demo.png)
 
-本地运行、可审计、可扩展的开源 AI 模型路由核心。通过 MCP stdio 接入支持工具调用的 AI 客户端，首期提供「草稿 → 必经结构化评审 → 按需修订」的 `review_then_revise` 瀑布工作流。
+本地运行、可审计、可扩展的开源 AI 模型路由核心。通过 MCP stdio 接入支持工具调用的 AI 客户端：`review_then_revise` 瀑布工作流（草稿 → 必经结构化评审 → 按需修订）、`parallel` 多模型并行比较、localhost OpenAI 兼容 API（含 SSE 流式与 Web UI 仪表板）、可选的人工批准门槛（`approval_threshold_usd`）。
 
-> 状态：**P0 全部阶段（0–5）完成** —— 103 项测试全绿；`npm audit` 0 漏洞；`npm ci` 干净安装复现通过；真实供应商在线联调已于 2026-11-03 通过（大陆向跨厂商）。待人工项见[验收状态矩阵](docs/acceptance-status.md)（真实客户端注册核验、Linux/Windows 平台实测）。许可证 MIT。用户自带模型凭证（BYOK）；默认无遥测、无云端组件、无本地监听。
+> 状态：**P0 全部阶段（0–5）+ P1 + P2 主体完成** —— 144 项测试全绿；`npm audit` 0 漏洞；`npm ci` 干净安装复现通过；真实供应商在线联调已于 2026-11-03 通过（大陆向跨厂商）。待人工项见[验收状态矩阵](docs/acceptance-status.md)（真实客户端注册核验、Linux/Windows 平台实测）。许可证 MIT。用户自带模型凭证（BYOK）；默认无遥测、无云端组件、无本地监听。
 
 ## 环境要求
 
@@ -80,10 +80,10 @@ node dist/src/cli.js config path
 - **追求速度用 BYOK 直连**：Bayez API 通道比直连慢 3~5 倍（多一跳网关）
 - **`status` 不是 `succeeded` 时看 `warnings`**：那里有具体的失败原因和已完成的步骤信息
 
-**接入真实供应商**（BYOK，密钥只放环境变量）：在配置中声明 `kind: openai-compatible`（如 DeepSeek/通义/火山方舟等 OpenAI 兼容端点）或 `kind: anthropic`，设置 `api_key_ref: env:你的变量名`，并从官方价格页核实模型定价（示例中的价格均为假数据）。参考发行示例：
+**接入真实供应商**（BYOK，密钥只放环境变量）：在配置中声明 `kind: openai-compatible`（如 DeepSeek/通义/火山方舟等 OpenAI 兼容端点）、`kind: anthropic` 或 `kind: gemini`，设置 `api_key_ref: env:你的变量名`，并从官方价格页核实模型定价（示例中的价格均为假数据）。参考发行示例：
 
 - **大陆向**：[examples/config.cn.example.yaml](examples/config.cn.example.yaml) —— DeepSeek 起草 → 通义 DashScope 评审 → 火山方舟（豆包）修订的跨厂商工作流；含 CNY 定价与 USD 预算（`allow_unknown_price`）的边界说明
-- **国际向**：[examples/config.intl.example.yaml](examples/config.intl.example.yaml) —— OpenAI（同厂分级复核：gpt-4o-mini → gpt-4o）+ Anthropic（跨厂商复核：OpenAI 起草 → Claude 评审）；USD 定价下硬预算直接生效
+- **国际向**：[examples/config.intl.example.yaml](examples/config.intl.example.yaml) —— OpenAI（同厂分级复核：gpt-4o-mini → gpt-4o）+ Anthropic（跨厂商复核：OpenAI 起草 → Claude 评审）+ Google Gemini（`kind: gemini` 独立适配器）；USD 定价下硬预算直接生效
 - 通用形态（含 Anthropic 与本地端点 opt-in）：[examples/config.example.yaml](examples/config.example.yaml)
 
 ```bash

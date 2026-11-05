@@ -5,6 +5,7 @@ import { CredentialStore } from '../credentials/store.js';
 import { MockProvider } from './mock/provider.js';
 import { OpenAICompatibleAdapter } from './openai-compatible/adapter.js';
 import { AnthropicAdapter } from './anthropic/adapter.js';
+import { GeminiAdapter } from './gemini/adapter.js';
 import type { ProviderAdapter } from './types.js';
 
 export interface RegistryError {
@@ -21,6 +22,8 @@ export function createProvider(providerId: string, cfg: ProviderConfig, credenti
       return ok(new OpenAICompatibleAdapter(providerId, cfg, credentials));
     case 'anthropic':
       return ok(new AnthropicAdapter(providerId, cfg, credentials));
+    case 'gemini':
+      return ok(new GeminiAdapter(providerId, cfg, credentials));
     default:
       return err({ code: 'unknown_kind', message: `provider "${providerId}": unsupported kind` });
   }

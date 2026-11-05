@@ -94,6 +94,27 @@ export class WorkflowOrchestrator {
       return this.runParallel(wf, req, opts);
     }
 
+    // P2-④ 人工批准：预估总费用超过门槛且用户未确认 → 暂停
+    if (wf.limits.approval_threshold_usd !== undefined && req.userOverrides?.approved !== true) {
+      const estTotal = this.estimateWorkflowCost(wf, req.input);
+      if (estTotal !== undefined && estTotal >= wf.limits.approval_threshold_usd) {
+        return {
+          ok: true,
+          value: {
+            runId: randomUUID(),
+            status: 'skipped' as RunStatus,
+            steps: [],
+            stopReason: 'pending_approval' as StopReason,
+            triggerReason: undefined,
+            warnings: [
+              `Estimated cost $${estTotal.toFixed(4)} exceeds approval threshold $${wf.limits.approval_threshold_usd}.`,
+              `Re-run with user_overrides.approved=true to proceed.`,
+            ],
+          },
+        };
+      }
+    }
+
     const warnings: string[] = [];
     const { maxSteps, totalTimeoutMs, maxCostUsd, maxChars } = applyOverrides(wf, req.userOverrides, warnings);
     /** P1/ADR-0003 D4：per-run max_chars 覆盖——收紧-only，注入确定性检查 */
@@ -473,6 +494,20 @@ export class WorkflowOrchestrator {
       if (!jr.ok) warnings.push(jr.error);
     }
     return { ok: true, value: result };
+  }
+
+  /** 估算整个工作流的最坏情况费用（P2-④ 人工批准用） */
+  private estimateWorkflowCost(wf: WorkflowConfig, input: string): number | undefined {
+    const guard = new BudgetGuard(undefined, true, makePriceBook(this.cfg));
+    let total = 0;
+    let hasUnknown = false;
+    for (const step of wf.steps) {
+      const promptChars = input.length + (step.input === 'review_template' ? 300 : step.input === 'revision_template' ? 600 : 0);
+      const est = guard.estimateCostUsd(promptChars, wf.limits.max_output_tokens, step.provider, step.model);
+      if (est === undefined) { hasUnknown = true; continue; }
+      total += est * (1 + (step.max_retries ?? wf.limits.max_retries_per_step));
+    }
+    return hasUnknown ? undefined : total;
   }
 
   private async callWithRetry(

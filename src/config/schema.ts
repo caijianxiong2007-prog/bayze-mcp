@@ -63,12 +63,21 @@ const anthropicProvider = z
   })
   .strict();
 
+const geminiProvider = z
+  .object({
+    kind: z.literal('gemini'),
+    base_url: z.string().url('base_url must be a valid URL').optional().default('https://generativelanguage.googleapis.com'),
+    ...remoteProviderCommon,
+  })
+  .strict();
+
 // 注意：URL 安全校验在 configSchema 根级 superRefine 中执行
 // （superRefine 会把成员包成 ZodEffects，不能放进 discriminatedUnion）
-export const providerSchema = z.discriminatedUnion('kind', [mockProvider, remoteProvider, anthropicProvider]);
+export const providerSchema = z.discriminatedUnion('kind', [mockProvider, remoteProvider, anthropicProvider, geminiProvider]);
 export type MockProviderConfig = z.infer<typeof mockProvider>;
 export type RemoteProviderConfig = z.infer<typeof remoteProvider>;
 export type AnthropicProviderConfig = z.infer<typeof anthropicProvider>;
+export type GeminiProviderConfig = z.infer<typeof geminiProvider>;
 export type ProviderConfig = z.infer<typeof providerSchema>;
 
 /** bayze_api 模式的 P0 固定主机白名单（基线 v0.4.1 §6 / ADR-0002 D3） */
@@ -82,6 +91,8 @@ const limitsSchema = z
     max_cost_usd: z.number().min(0).optional(),
     allow_unknown_price: z.boolean().optional().default(false),
     max_retries_per_step: z.number().int().min(0).optional().default(0),
+    /** 人工批准门槛（P2-④）：预估费用超过此值时暂停等待用户确认 */
+    approval_threshold_usd: z.number().min(0).optional(),
   })
   .strict();
 export type WorkflowLimits = z.infer<typeof limitsSchema>;

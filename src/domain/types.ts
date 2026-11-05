@@ -17,7 +17,8 @@ export type StopReason =
   | 'cancelled'
   | 'workflow_exhausted'
   | 'review_failed'
-  | 'timed_out';
+  | 'timed_out'
+  | 'pending_approval';
 
 export type ProviderErrorCode =
   | 'auth'
@@ -59,6 +60,8 @@ export interface UserOverrides {
   maxCostUsd?: number;
   /** 确定性字数硬上限（收紧-only）：注入到每个有 max_chars 检查的步骤 */
   maxChars?: number;
+  /** 用户已批准本次运行的费用（P2-④：当预估超过 approval_threshold_usd 时需传入） */
+  approved?: boolean;
 }
 
 export interface RunRequest {

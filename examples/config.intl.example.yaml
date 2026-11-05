@@ -1,20 +1,23 @@
-# 国际向真实供应商示例 —— OpenAI + Anthropic
+# 国际向真实供应商示例 —— OpenAI + Anthropic + Google Gemini
 #
 # 使用前：
 #   export BAYZE_OPENAI_API_KEY=...
 #   export BAYZE_ANTHROPIC_API_KEY=...
+#   export BAYZE_GEMINI_API_KEY=...
 #   node dist/src/cli.js config check --config examples/config.intl.example.yaml --strict
 #   node dist/src/cli.js run --workflow review_then_revise_intl --config examples/config.intl.example.yaml --input "your task"
 #   node dist/src/cli.js run --workflow review_then_revise_cross_intl --config examples/config.intl.example.yaml --input "your task"
 #
 # 重要说明（如实）：
 #   - 端点与模型 ID 为公开形态，仍以官方文档为准（待核验）；
-#   - 价格为「假数据」示例（两家均以 USD 计价），请按官方价格页核实替换；
+#   - 价格为「假数据」示例（三家均以 USD 计价），请按官方价格页核实替换；
 #   - 与大陆向示例的区别：USD 定价可直接参与硬预算——两个工作流的
 #     max_cost_usd 都是被强制执行的（无需 allow_unknown_price）；
 #   - OpenAI 走 openai-compatible 适配器（Bearer / chat/completions）；
 #     Anthropic 走独立适配器（x-api-key / /v1/messages，错误体系不同），
 #     base_url 默认 https://api.anthropic.com，可省略；
+#   - Gemini 走独立适配器（x-goog-api-key / :generateContent），
+#     base_url 默认 https://generativelanguage.googleapis.com，可省略；
 #   - 使用需自行具备相应的网络与支付环境。
 
 version: 1
@@ -45,6 +48,17 @@ providers:
         pricing: { currency: USD, input_per_1m_tokens: 3.00, output_per_1m_tokens: 15.00 }
       - id: claude-haiku-4-5
         pricing: { currency: USD, input_per_1m_tokens: 1.00, output_per_1m_tokens: 5.00 }
+
+  gemini:
+    kind: gemini
+    api_key_ref: "env:BAYZE_GEMINI_API_KEY"
+    # base_url 默认 https://generativelanguage.googleapis.com（如走自设代理再显式覆盖）
+    models:
+      - id: gemini-2.5-flash
+        # 假数据：以官方价格页为准
+        pricing: { currency: USD, input_per_1m_tokens: 0.30, output_per_1m_tokens: 2.50 }
+      - id: gemini-2.5-pro
+        pricing: { currency: USD, input_per_1m_tokens: 1.25, output_per_1m_tokens: 10.00 }
 
 workflows:
   # 同厂分级复核：轻量模型起草 → 强模型评审 → 轻量模型按意见修订
