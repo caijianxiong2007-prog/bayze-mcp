@@ -17,6 +17,7 @@ export function workflowsSummary(cfg: BayzeConfig): unknown {
   return Object.entries(cfg.workflows).map(([id, wf]) => ({
     id,
     strategy: wf.strategy,
+    ...(wf.profile ? { profile: wf.profile } : {}),
     limits: {
       maxSteps: wf.limits.max_steps,
       totalTimeoutMs: wf.limits.total_timeout_ms,

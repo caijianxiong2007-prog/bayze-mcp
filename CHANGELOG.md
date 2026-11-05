@@ -2,11 +2,11 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
-## 0.3.0（2026-11-05）—— quick_answer 单模型路径（后续计划 v1.0 增量 A）
+## 0.3.0（2026-11-05）—— quick_answer + 任务 profile（后续计划 v1.0 增量 A/B）
 
-- **`quick_answer` 工作流**：单模型一步完成、无评审门、无升级路径——最便宜最快速的模型调用方式。适合简单事实问答、翻译、格式转换等不需要跨厂商复核的任务。引擎层零改动（单步 waterfall 天然支持），新增示例配置与 2 项测试。
-- 真实推理验证通过：DeepSeek deepseek-chat 单步 / `mode: byok` / ~2 秒 / 无 reviewSummary / 无 triggerReason。
-- 用户在 MCP 客户端可显式选择 `quick_answer`（快/便宜）或 `review_then_revise`（质量保证），不部署隐式 LLM 分类器。
+- **`quick_answer` 工作流**：单模型一步完成、无评审门——最便宜最快速的模型调用方式。
+- **任务 profile**：workflow 新增可选 `profile` 字段（`category` / `quality_tier` / `description` / `max_input_chars`），`list_workflows` 自动携带。AI 客户端可据此推荐合适工作流。P0 不部署隐式 LLM 分类器，由用户显式选择。
+- 测试 119/119 全绿；真实推理验证通过。
 
 ## 0.2.0（2026-11-04）—— 双接入模式（基线 v0.4.1）
 

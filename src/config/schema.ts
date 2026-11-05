@@ -105,9 +105,25 @@ const stepSchema = z
   .strict();
 export type StepConfig = z.infer<typeof stepSchema>;
 
+/** 任务 profile：工作流的可选元数据，帮助用户/AI 客户端按任务类型选择合适路径（后续计划 v1.0 增量 B） */
+const taskProfile = z
+  .object({
+    /** 任务类别，如 translation / coding / analysis / general */
+    category: z.string().min(1),
+    /** 质量档位：fast（最便宜最快）/ standard（平衡）/ high（跨厂商复核） */
+    quality_tier: z.enum(['fast', 'standard', 'high']),
+    /** 人类可读描述（展示给 AI 客户端） */
+    description: z.string().optional(),
+    /** 输入体积建议上限（字符） */
+    max_input_chars: z.number().int().positive().optional(),
+  })
+  .strict();
+
 const workflowSchema = z
   .object({
     strategy: z.literal('waterfall'),
+    /** 任务 profile（可选）：让 list_workflows 携带分类信息 */
+    profile: taskProfile.optional(),
     limits: limitsSchema,
     steps: z.array(stepSchema).min(1, 'workflow needs at least one step'),
   })
