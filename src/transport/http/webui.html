@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bayze 配置</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,'SF Pro Text','PingFang SC',sans-serif;background:#f5f5f7;color:#1d1d1f;padding:20px}
+h1{font-size:28px;font-weight:700;margin-bottom:8px}
+.subtitle{color:#86868b;font-size:15px;margin-bottom:24px}
+.card{background:#fff;border-radius:16px;padding:24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+h2{font-size:18px;font-weight:600;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;padding:8px 12px;background:#f8f8fa;border-radius:6px;color:#86868b;font-weight:500}
+td{padding:8px 12px;border-bottom:1px solid #f0f0f2}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:500}
+.green{background:#e8f5e9;color:#2e7d32}
+.blue{background:#e3f2fd;color:#1565c0}
+.orange{background:#fff3e0;color:#e65100}
+.purple{background:#f3e5f5;color:#7b1fa2}
+.stat{display:flex;gap:32px;margin-bottom:16px}
+.stat-item{text-align:center}
+.stat-num{font-size:32px;font-weight:700;color:#0071e3}
+.stat-label{font-size:13px;color:#86868b}
+.btn{display:inline-block;padding:10px 24px;border-radius:12px;background:#0071e3;color:#fff;font-size:15px;font-weight:600;border:none;cursor:pointer;text-decoration:none}
+.btn:active{background:#005bb5}
+.test-btn{background:#34c759;margin-left:8px}
+.code{background:#1d1d1f;color:#f5f5f7;padding:12px 16px;border-radius:8px;font-family:'SF Mono',Menlo,monospace;font-size:13px;margin:8px 0}
+.muted{color:#86868b;font-size:13px}
+a{color:#0071e3}
+</style>
+</head>
+<body>
+<h1>Bayze</h1>
+<p class="subtitle">本地 AI 模型路由 · <span id="version">—</span></p>
+
+<div class="stat" id="stats"></div>
+
+<div class="card">
+<h2>工作流</h2>
+<table id="workflowTable">
+<thead><tr><th>名称</th><th>策略</th><th>质量档位</th><th>说明</th><th>操作</th></tr></thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>供应商</h2>
+<table id="providerTable">
+<thead><tr><th>名称</th><th>类型</th><th>接入模式</th><th>模型</th></tr></thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>快速开始</h2>
+<p class="muted">在 MCP 客户端（Cherry Studio / Cursor / Claude Desktop）中注册后，直接说：</p>
+<div class="code">用 review_then_revise_cn 处理：[你的任务]</div>
+<p class="muted">或使用 OpenAI 兼容 API：</p>
+<div class="code">curl http://127.0.0.1:3470/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"model":"quick_answer","messages":[{"role":"user","content":"Hello"}]}'</div>
+</div>
+
+<div class="card">
+<h2>链接</h2>
+<p><a href="https://github.com/caijianxiong2007-prog/bayze-mcp">GitHub</a> ·
+<a href="https://gitee.com/collection-master/bayze-mcp">Gitee</a> ·
+<a href="https://www.npmjs.com/package/bayze-mcp">npm</a> · MIT</p>
+</div>
+
+<script>
+const API = '';
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+async function fetchWorkflows() {
+  try {
+    // 尝试通过 MCP list_workflows 获取数据
+    // 如果 serve 模式下有 /api/workflows 端点则用它
+    const res = await fetch(`${API}/api/workflows`, {
+      headers: TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {},
+    });
+    if (res.ok) {
+      const data = await res.json();
+      render(data);
+    } else {
+      renderDemo();
+    }
+  } catch {
+    renderDemo();
+  }
+}
+
+function render(data) {
+  document.getElementById('version').textContent = data.version || '';
+  const wfBody = document.querySelector('#workflowTable tbody');
+  if (wfBody && data.workflows) {
+    wfBody.innerHTML = data.workflows.map(w => `
+      <tr>
+        <td><strong>${w.id}</strong></td>
+        <td><span class="badge ${w.strategy === 'parallel' ? 'purple' : 'blue'}">${w.strategy}</span></td>
+        <td><span class="badge ${w.profile?.quality_tier === 'high' ? 'orange' : w.profile?.quality_tier === 'fast' ? 'green' : 'blue'}">${w.profile?.quality_tier || '—'}</span></td>
+        <td class="muted">${w.profile?.description || w.steps.map(s => s.name).join(' → ')}</td>
+        <td><button class="btn" style="padding:4px 12px;font-size:13px" onclick="runWorkflow('${w.id}')">测试</button></td>
+      </tr>
+    `).join('');
+  }
+  const provBody = document.querySelector('#providerTable tbody');
+  if (provBody && data.providers) {
+    provBody.innerHTML = data.providers.map(p => `
+      <tr>
+        <td><strong>${p.id}</strong></td>
+        <td>${p.kind}</td>
+        <td><span class="badge ${p.mode === 'bayze_api' ? 'purple' : 'green'}">${p.mode || 'byok'}</span></td>
+        <td class="muted">${p.models?.join(', ') || '—'}</td>
+      </tr>
+    `).join('');
+  }
+}
+
+function renderDemo() {
+  document.getElementById('version').textContent = '(未连接)';
+  document.querySelector('#workflowTable tbody').innerHTML = `
+    <tr><td class="muted" colspan="5">启动 <code>bayze serve</code> 后刷新此页面查看配置</td></tr>`;
+  document.querySelector('#providerTable tbody').innerHTML = `
+    <tr><td class="muted" colspan="4">—</td></tr>`;
+}
+
+function runWorkflow(id) {
+  // 弹窗输入任务 → 调用 API → 显示结果
+  const input = prompt(`运行 "${id}"，请输入任务：`);
+  if (!input) return;
+  fetch(`${API}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+    },
+    body: JSON.stringify({ model: id, messages: [{ role: 'user', content: input }] }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      const content = data.choices?.[0]?.message?.content || '无输出';
+      alert(content.substring(0, 500));
+    })
+    .catch(e => alert('Error: ' + e.message));
+}
+
+fetchWorkflows();
+</script>
+</body>
+</html>

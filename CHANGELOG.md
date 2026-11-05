@@ -2,6 +2,13 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.7.0（2026-11-05）—— P2 第一批：Dockerfile + 流式输出 + Web UI
+
+- **Dockerfile**：多阶段构建（builder + runtime），非 root 用户，`node:22-alpine` 基础镜像。支持 `docker run -i bayze-mcp`（stdio）和 `docker run -p 3470:3470 bayze-mcp serve`（HTTP）。用于 glama.ai 自动化安全检查。
+- **流式输出（`stream: true`）**：`POST /v1/chat/completions` 支持 SSE 格式流式响应，兼容 Chatbox/LobeChat 等需要流式的工具。步骤进度作为 SSE 注释发送，最终内容按 200 字符分块推送。
+- **Web UI 配置界面**：`bayze serve` 启动后访问 `http://127.0.0.1:3470/` 可查看仪表板——工作流列表（含 profile 元数据/质量档位/测试按钮）、供应商列表、快速开始指南。`GET /api/workflows` 返回配置 JSON（需鉴权）。
+- 测试 130/130 全绿。
+
 ## 0.6.0（2026-11-05）—— 多模型并行比较 + 配置导出（P1 第三批）
 
 - **`parallel` 工作流策略**：多个模型同时执行同一任务，返回全部结果供横向对比。所有步骤并发执行（`Promise.allSettled`），无 `run_if`/`gate`（纯比较模式）。`finalOutput` 为所有成功结果的拼接（`[step_name/model_id]\n内容`），AI 客户端可直接展示对比。
