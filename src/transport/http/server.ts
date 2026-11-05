@@ -2,9 +2,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import type { BayzeConfig } from '../../config/schema.js';
 import type { McpApp } from '../../transport/mcp/app.js';
 import type { RunResult, StepResult } from '../../domain/types.js';
+
+const require_ = createRequire(import.meta.url);
+/** 运行时从 package.json 读取（dist/src/transport/http → 上 4 级到包根） */
+const VERSION = (require_('../../../../package.json') as { version: string }).version;
 
 /**
  * localhost OpenAI 兼容 API（ADR-0004）：
@@ -177,7 +182,7 @@ function toConfigSummary(cfg: BayzeConfig): Record<string, unknown> {
     mode: p.kind !== 'mock' ? p.mode : undefined,
     models: p.models.map((m) => m.id),
   }));
-  return { version: '0.7.0', workflows, providers, runtime: cfg.runtime };
+  return { version: VERSION, workflows, providers, runtime: cfg.runtime };
 }
 
 /** SSE 流式响应（P2 / ADR-0004 流式扩展）：兼容 OpenAI stream 格式 */

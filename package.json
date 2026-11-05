@@ -1,6 +1,6 @@
 {
   "name": "bayze-mcp",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Bayze — 本地运行、可审计的开源 AI 模型路由核心（MCP stdio）：草稿 → 结构化评审 → 按需修订 的多模型工作流，BYOK，无遥测",
   "type": "module",
   "license": "MIT",
@@ -36,7 +36,7 @@
     "local-first"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"const{copyFileSync}=require('fs');copyFileSync('src/transport/http/webui.html','dist/src/transport/http/webui.html')\"",
     "test": "npm run build && node --test dist/tests/unit/*.test.js",
     "check": "node dist/src/cli.js config check",
     "prepublishOnly": "npm run build && npm test"
