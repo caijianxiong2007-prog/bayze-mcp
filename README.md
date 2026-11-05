@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/caijianxiong2007-prog/bayze-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/caijianxiong2007-prog/bayze-mcp/actions/workflows/ci.yml) · [English](README.en.md)
 
+![Bayze 终端演示](docs/demo.png)
+
 本地运行、可审计、可扩展的开源 AI 模型路由核心。通过 MCP stdio 接入支持工具调用的 AI 客户端，首期提供「草稿 → 必经结构化评审 → 按需修订」的 `review_then_revise` 瀑布工作流。
 
 > 状态：**P0 全部阶段（0–5）完成** —— 103 项测试全绿；`npm audit` 0 漏洞；`npm ci` 干净安装复现通过；真实供应商在线联调已于 2026-11-03 通过（大陆向跨厂商）。待人工项见[验收状态矩阵](docs/acceptance-status.md)（真实客户端注册核验、Linux/Windows 平台实测）。许可证 MIT。用户自带模型凭证（BYOK）；默认无遥测、无云端组件、无本地监听。

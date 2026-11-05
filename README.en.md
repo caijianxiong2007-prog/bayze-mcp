@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/caijianxiong2007-prog/bayze-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/caijianxiong2007-prog/bayze-mcp/actions/workflows/ci.yml)
 
+![Bayze terminal demo](docs/demo.png)
+
 A local-first, auditable, open-source **AI model-routing core**. Bayze plugs into MCP-capable AI clients over stdio and runs explicit multi-model workflows — starting with `review_then_revise`: one model drafts, a second model structurally reviews, a third revises only when rejected.
 
 Bring your own keys (BYOK). No telemetry, no cloud components, no listening ports.
