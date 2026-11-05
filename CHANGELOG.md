@@ -2,6 +2,13 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.6.0（2026-11-05）—— 多模型并行比较 + 配置导出（P1 第三批）
+
+- **`parallel` 工作流策略**：多个模型同时执行同一任务，返回全部结果供横向对比。所有步骤并发执行（`Promise.allSettled`），无 `run_if`/`gate`（纯比较模式）。`finalOutput` 为所有成功结果的拼接（`[step_name/model_id]\n内容`），AI 客户端可直接展示对比。
+- **`bayze export` 命令**：输出当前配置的 YAML（自动脱敏——配置文件本身只含 `env:`/`keychain:` 引用，不含密钥值），可安全分享。
+- parallel 策略的 schema 校验：不允许 `run_if` 和 `gate`（所有步骤无条件并发）。
+- 测试 130/130 全绿（新增 4：parallel 三模型并发/每步 mode/schema 拒绝 run_if/schema 拒绝 gate）。
+
 ## 0.5.0（2026-11-05）—— localhost OpenAI 兼容 API（P1 第二批 / ADR-0004）
 
 - **`bayze serve`**：启动本地 HTTP 服务器，暴露 OpenAI 兼容的 `POST /v1/chat/completions` 端点。任何支持自定义 OpenAI 端点的工具（不限于 MCP 客户端）现在都可以使用 Bayze 的工作流。

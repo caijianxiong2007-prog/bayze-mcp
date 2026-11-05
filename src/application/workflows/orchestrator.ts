@@ -89,6 +89,11 @@ export class WorkflowOrchestrator {
       this.adapters.set(step.provider, created.value);
     }
 
+    // parallel 策略：多模型同时执行同一任务（P1 / ADR-0005 D1）
+    if (wf.strategy === 'parallel') {
+      return this.runParallel(wf, req, opts);
+    }
+
     const warnings: string[] = [];
     const { maxSteps, totalTimeoutMs, maxCostUsd, maxChars } = applyOverrides(wf, req.userOverrides, warnings);
     /** P1/ADR-0003 D4：per-run max_chars 覆盖——收紧-only，注入确定性检查 */
@@ -329,6 +334,140 @@ export class WorkflowOrchestrator {
           usage: s.usage,
           estimatedCost: s.estimatedCost,
         })),
+        warnings,
+      });
+      if (!jr.ok) warnings.push(jr.error);
+    }
+    return { ok: true, value: result };
+  }
+
+  /**
+   * parallel 策略（P1）：所有步骤同时执行同一输入，返回全部结果供对比。
+   * 无 run_if / gate / 升级——纯比较模式。
+   */
+  private async runParallel(
+    wf: WorkflowConfig,
+    req: RunRequest,
+    opts: RunOptions,
+  ): Promise<Result<RunResult, RunSetupError>> {
+    const warnings: string[] = [];
+    const runId = randomUUID();
+    const startedMs = Date.now();
+    const deadline = startedMs + wf.limits.total_timeout_ms;
+    const guard = new BudgetGuard(wf.limits.max_cost_usd, wf.limits.allow_unknown_price, makePriceBook(this.cfg));
+    const stepResults: StepResult[] = [];
+    const outputs: Array<{ name: string; model: string; content: string }> = [];
+
+    const modeOf = (providerId: string): AccessMode => {
+      const p = this.cfg.providers[providerId];
+      return p && p.kind !== 'mock' ? p.mode : 'byok';
+    };
+
+    // 并发执行所有步骤
+    const promises = wf.steps.map(async (step, idx) => {
+      const stepStart = Date.now();
+      const mode = modeOf(step.provider);
+      const stepMode = mode;
+      const prompt = renderStepPrompt('original', {
+        original: req.input,
+        reviewSchemaFields: ['verdict', 'reasons'],
+      });
+      if (!prompt.ok) {
+        return { idx, step, status: 'failed' as RunStatus, errorCode: undefined as ProviderErrorCode | undefined, checks: [], usage: undefined, cost: undefined, content: '', durationMs: 0 };
+      }
+
+      const promptChars = prompt.value.user.length;
+      const estimate = guard.estimateCostUsd(promptChars, wf.limits.max_output_tokens, step.provider, step.model);
+      const reservation = guard.reserve(estimate, step.provider, step.model);
+      if (!reservation.ok) {
+        return { idx, step, status: 'budget_exceeded' as RunStatus, errorCode: undefined, checks: [], usage: undefined, cost: undefined, content: '', durationMs: 0 };
+      }
+
+      const timeoutMs = Math.max(1, Math.min(step.timeout_ms, deadline - Date.now()));
+      const call = await this.callWithRetry(step, prompt.value, {
+        timeoutMs,
+        retries: step.max_retries ?? wf.limits.max_retries_per_step,
+        signal: opts.signal,
+        maxOutputTokens: wf.limits.max_output_tokens,
+      });
+
+      if (!call.ok) {
+        guard.release(reservation.value);
+        return { idx, step, status: 'failed' as RunStatus, errorCode: call.error.code, checks: [], usage: undefined, cost: undefined, content: '', durationMs: Date.now() - stepStart };
+      }
+
+      const cost = guard.settle(reservation.value, call.value.usage, step.provider, step.model, promptChars, wf.limits.max_output_tokens);
+      const checks = runDeterministicChecks(call.value.content, step.evaluate);
+      const allPassed = checks.every((c) => c.passed);
+      return {
+        idx, step, status: (allPassed ? 'succeeded' : 'failed') as RunStatus,
+        errorCode: undefined, checks, usage: call.value.usage, cost,
+        content: call.value.content, durationMs: Date.now() - stepStart,
+      };
+    });
+
+    const settled = await Promise.allSettled(promises);
+
+    // 按原始顺序整理结果
+    for (let idx = 0; idx < wf.steps.length; idx++) {
+      const step = wf.steps[idx];
+      if (!step) continue;
+      const result = settled.find((s) => s.status === 'fulfilled' && s.value.idx === idx);
+      if (result && result.status === 'fulfilled') {
+        const v = result.value;
+        const mode = modeOf(step.provider);
+        const sr: StepResult = {
+          stepId: `${idx + 1}.${step.name}`,
+          stepName: step.name,
+          providerId: step.provider,
+          modelId: step.model,
+          mode,
+          status: v.status,
+          startedAt: new Date(startedMs).toISOString(),
+          durationMs: v.durationMs,
+          checks: v.checks,
+        };
+        if (v.usage) sr.usage = v.usage;
+        if (v.cost !== undefined) sr.estimatedCost = v.cost;
+        if (v.errorCode) sr.errorCode = v.errorCode;
+        stepResults.push(sr);
+        if (v.status === 'succeeded' && v.content) {
+          outputs.push({ name: step.name, model: step.model, content: v.content });
+        }
+      } else {
+        stepResults.push({
+          stepId: `${idx + 1}.${step.name}`,
+          stepName: step.name,
+          providerId: step.provider,
+          modelId: step.model,
+          mode: modeOf(step.provider),
+          status: 'failed' as RunStatus,
+          startedAt: new Date(startedMs).toISOString(),
+          durationMs: 0,
+          checks: [],
+        });
+      }
+    }
+
+    // finalOutput = 所有成功输出的拼接对比
+    const finalOutput = outputs.length > 0
+      ? outputs.map((o) => `[${o.name}/${o.model}]\n${o.content}`).join('\n\n---\n\n')
+      : undefined;
+
+    const succeededCount = outputs.length;
+    const status: RunStatus = succeededCount > 0 ? 'succeeded' : 'failed';
+    const stopReason: StopReason = succeededCount > 0 ? 'completed' : 'workflow_exhausted';
+    warnings.push(`parallel: ${succeededCount}/${wf.steps.length} models succeeded`);
+
+    if (guard.reserved > 0) warnings.push(`unreleased budget reservation: $${guard.reserved.toFixed(6)}`);
+
+    const result: RunResult = { runId, status, finalOutput, steps: stepResults, stopReason, warnings };
+
+    if (opts.journal?.enabled) {
+      const jr = opts.journal.append({
+        v: 1, ts: new Date().toISOString(), runId, workflowId: req.workflowId,
+        status, stopReason, durationMs: Date.now() - startedMs,
+        steps: stepResults.map((s) => ({ name: s.stepName, providerId: s.providerId, modelId: s.modelId, mode: s.mode, status: s.status, durationMs: s.durationMs, usage: s.usage, estimatedCost: s.estimatedCost })),
         warnings,
       });
       if (!jr.ok) warnings.push(jr.error);

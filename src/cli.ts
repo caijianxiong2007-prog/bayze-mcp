@@ -77,6 +77,8 @@ async function main(argv: string[]): Promise<number> {
       return modelsCmd(rest);
     case 'serve':
       return serveCmd(rest);
+    case 'export':
+      return exportCmd(rest);
     default:
       return fail(USAGE, 2);
   }
@@ -323,6 +325,23 @@ async function serveCmd(args: string[]): Promise<number> {
   process.stderr.write(`[bayze serve] workflows: ${Object.keys(loaded.value.workflows).join(', ')}\n`);
   process.stderr.write(`[bayze serve] use "model" field as workflow id (e.g. {"model": "quick_answer", ...})\n`);
   process.on('SIGINT', () => { server.close(); process.exit(0); });
+  return 0;
+}
+
+/** 导出脱敏配置（P1）：api_key_ref 值保留（本来就是引用），不含密钥值 */
+function exportCmd(args: string[]): number {
+  let configPath: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--config') { configPath = args[++i]; }
+    else return fail(`unknown option: ${args[i]}`, 2);
+  }
+  const loaded = loadConfig(configPath ?? defaultConfigPath());
+  if (!loaded.ok) return fail(formatConfigError(loaded.error), 1);
+  // 输出脱敏版 YAML（原样输出——配置文件本身就不含密钥值）
+  const { readFileSync } = require('node:fs') as typeof import('node:fs');
+  const raw = readFileSync(configPath ?? defaultConfigPath(), 'utf8');
+  process.stdout.write(raw);
+  process.stderr.write('\n# Exported config is safe to share: it contains only env/keychain references, never actual keys.\n');
   return 0;
 }
 

@@ -121,13 +121,26 @@ const taskProfile = z
 
 const workflowSchema = z
   .object({
-    strategy: z.literal('waterfall'),
+    strategy: z.enum(['waterfall', 'parallel']),
     /** 任务 profile（可选）：让 list_workflows 携带分类信息 */
     profile: taskProfile.optional(),
     limits: limitsSchema,
     steps: z.array(stepSchema).min(1, 'workflow needs at least one step'),
   })
-  .strict();
+  .strict()
+  .superRefine((wf, ctx) => {
+    // parallel 策略不允许 run_if 和 gate（所有步骤同时执行）
+    if (wf.strategy === 'parallel') {
+      wf.steps.forEach((step, i) => {
+        if (step.run_if !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'run_if'], message: 'parallel strategy does not support run_if (all steps run simultaneously)' });
+        }
+        if (step.gate !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'gate'], message: 'parallel strategy does not support gate (no review in comparison mode)' });
+        }
+      });
+    }
+  });
 export type WorkflowConfig = z.infer<typeof workflowSchema>;
 
 const runtimeSchema = z
@@ -253,7 +266,7 @@ export const configSchema = z
               message: 'the first step input must be "original"',
             });
           }
-        } else if (step.run_if === undefined) {
+        } else if (wf.strategy === 'waterfall' && step.run_if === undefined) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: [...path, 'run_if'],
