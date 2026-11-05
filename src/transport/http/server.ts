@@ -42,8 +42,11 @@ export function startServeApp(cfg: BayzeConfig, app: McpApp, port: number, token
       res.end(sanitizeJson(payload));
     };
     try {
-      // Web UI 仪表板（P2-③）：GET / 返回配置界面
-      if (req.method === 'GET' && (req.url === '/' || req.url === '/ui')) {
+      // 路由按 pathname 匹配（忽略 query——Web UI 依赖 ?token= 传鉴权，2026-11-05 修复）
+      const pathname = new URL(req.url ?? '/', `http://${req.headers['host'] ?? 'localhost'}`).pathname;
+
+      // Web UI 仪表板（P2-③）：GET / 返回配置界面（带 ?token= 也能命中）
+      if (req.method === 'GET' && (pathname === '/' || pathname === '/ui')) {
         const html = getWebUI();
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff' });
         res.end(html);
@@ -51,7 +54,7 @@ export function startServeApp(cfg: BayzeConfig, app: McpApp, port: number, token
       }
 
       // API：GET /api/workflows 返回配置摘要（需鉴权）
-      if (req.method === 'GET' && req.url === '/api/workflows') {
+      if (req.method === 'GET' && pathname === '/api/workflows') {
         const auth = req.headers['authorization'];
         if (auth !== `Bearer ${token}`) {
           reply(401, { error: { message: 'Unauthorized' } });
@@ -62,7 +65,7 @@ export function startServeApp(cfg: BayzeConfig, app: McpApp, port: number, token
         return;
       }
 
-      if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+      if (req.method !== 'POST' || pathname !== '/v1/chat/completions') {
         reply(404, { error: { message: 'Not found. Only POST /v1/chat/completions is supported.' } });
         return;
       }
