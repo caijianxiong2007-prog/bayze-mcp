@@ -1,6 +1,6 @@
 {
   "name": "bayze-mcp",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Bayze — 本地运行、可审计的开源 AI 模型路由核心（MCP stdio）：草稿 → 结构化评审 → 按需修订 的多模型工作流，BYOK，无遥测",
   "type": "module",
   "license": "MIT",

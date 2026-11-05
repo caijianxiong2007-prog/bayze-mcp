@@ -41,7 +41,7 @@ test('parseReview：verdict 非法 → invalid_verdict', () => {
   if (!r.ok) assert.equal(r.error.code, 'invalid_verdict');
 });
 
-test('parseReview：schema 要求 reasons 时缺失/类型不符 → invalid_reasons', () => {
+test('parseReview：schema 要求 reasons 时缺失/类型不符/空数组 → invalid_reasons（fail-closed）', () => {
   const missing = parseReview('{"verdict":"accept"}', ['verdict', 'reasons']);
   assert.ok(!missing.ok);
   if (!missing.ok) assert.equal(missing.error.code, 'invalid_reasons');
@@ -51,6 +51,11 @@ test('parseReview：schema 要求 reasons 时缺失/类型不符 → invalid_rea
 
   const notStrings = parseReview('{"verdict":"accept","reasons":[1,2]}', ['verdict', 'reasons']);
   assert.ok(!notStrings.ok);
+
+  // dogfood 发现：空数组（橡皮图章）也必须拒绝
+  const emptyReasons = parseReview('{"verdict":"accept","reasons":[]}', ['verdict', 'reasons']);
+  assert.ok(!emptyReasons.ok);
+  if (!emptyReasons.ok) assert.equal(emptyReasons.error.code, 'invalid_reasons');
 });
 
 test('parseReview：schema 未要求 reasons 时可缺省', () => {

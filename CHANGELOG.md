@@ -2,7 +2,11 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
-## 0.3.1（2026-11-05）—— 任务 profile（增量 B）
+## 0.3.3（2026-11-05）—— dogfood 发现修复：空 reasons 拒绝 + 受限写作工作流
+
+- **空 reasons 橡皮图章修复**：`parseReview` 现在拒绝 `reasons: []`（空数组）——不带任何理由的 accept 不再通过结构化评审门（fail-closed）。dogfood 发现：qwen-plus 曾给出 accept + 空 reasons，gate 直接放行，审计不可接受。
+- **新增 `constrained_writing` 工作流**：确定性 `max_chars: 200` 硬上限——当评审模型不严格卡字数时（三个评审者均少报 30~40 字），由引擎确定性拦截。这是「任务显式约束 → 确定性检查」的 P0 落地方案。
+- 另据 dogfood 记录：评审模型的字数自报不可信（系统性少报），`reviewSummary.reasons` 中的字数不能作为合规依据。
 
 ## 0.3.0（2026-11-05）—— quick_answer + 任务 profile + 评测工具（后续计划 v1.0 增量 A/B/C/D）
 

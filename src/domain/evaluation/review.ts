@@ -38,8 +38,8 @@ export function parseReview(content: string, schemaFields: string[]): Result<Rev
   let reasons: string[] = [];
   if (schemaFields.includes('reasons')) {
     const raw = obj['reasons'];
-    if (!Array.isArray(raw) || !raw.every((x) => typeof x === 'string')) {
-      return err({ code: 'invalid_reasons', message: 'reviewer reasons must be an array of strings' });
+    if (!Array.isArray(raw) || raw.length === 0 || !raw.every((x) => typeof x === 'string')) {
+      return err({ code: 'invalid_reasons', message: 'reviewer reasons must be a non-empty array of strings (empty reasons = rubber-stamp, fails closed)' });
     }
     reasons = raw as string[];
   }
