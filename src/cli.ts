@@ -75,6 +75,8 @@ async function main(argv: string[]): Promise<number> {
       return evalCmd(rest);
     case 'models':
       return modelsCmd(rest);
+    case 'serve':
+      return serveCmd(rest);
     default:
       return fail(USAGE, 2);
   }
@@ -291,6 +293,37 @@ async function modelsCmd(args: string[]): Promise<number> {
     process.stderr.write(`Error: ${(e as Error).message}\n`);
     return 1;
   }
+}
+
+/** 启动 localhost OpenAI 兼容 API（P1 / ADR-0004） */
+async function serveCmd(args: string[]): Promise<number> {
+  let configPath: string | undefined;
+  let port = 3470;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--config') { const v = args[++i]; if (!v) return fail('--config requires a path', 2); configPath = v; }
+    else if (a === '--port') {
+      const v = Number(args[++i]);
+      if (!Number.isInteger(v) || v < 1024 || v > 65535) return fail('--port requires an integer 1024-65535', 2);
+      port = v;
+    } else return fail(`unknown option: ${a}`, 2);
+  }
+  const token = process.env['BAYZE_SERVE_TOKEN'];
+  if (!token || token.length < 8) {
+    return fail('BAYZE_SERVE_TOKEN must be set (at least 8 chars) for authentication.\nExample: export BAYZE_SERVE_TOKEN="$(openssl rand -hex 16)"', 1);
+  }
+  const loaded = loadConfig(configPath ?? defaultConfigPath());
+  if (!loaded.ok) return fail(formatConfigError(loaded.error), 1);
+  const { McpApp } = await import('./transport/mcp/app.js');
+  const { startServeApp } = await import('./transport/http/server.js');
+  const journal = new RunJournal(null);
+  const app = new McpApp(loaded.value, journal);
+  const server = startServeApp(loaded.value, app, port, token);
+  process.stderr.write(`[bayze serve] listening on http://127.0.0.1:${port}/v1/chat/completions\n`);
+  process.stderr.write(`[bayze serve] workflows: ${Object.keys(loaded.value.workflows).join(', ')}\n`);
+  process.stderr.write(`[bayze serve] use "model" field as workflow id (e.g. {"model": "quick_answer", ...})\n`);
+  process.on('SIGINT', () => { server.close(); process.exit(0); });
+  return 0;
 }
 
 async function readStdin(): Promise<string> {

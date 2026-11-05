@@ -2,6 +2,19 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.5.0（2026-11-05）—— localhost OpenAI 兼容 API（P1 第二批 / ADR-0004）
+
+- **`bayze serve`**：启动本地 HTTP 服务器，暴露 OpenAI 兼容的 `POST /v1/chat/completions` 端点。任何支持自定义 OpenAI 端点的工具（不限于 MCP 客户端）现在都可以使用 Bayze 的工作流。
+- 安全边界（ADR-0004）：仅绑定 127.0.0.1、Bearer token 鉴权（`BAYZE_SERVE_TOKEN`）、请求体 ≤1MB、HTTP 超时 180s、`X-Content-Type-Options: nosniff`、无 CORS、无流式。
+- **用法**：
+  ```bash
+  export BAYZE_SERVE_TOKEN="$(openssl rand -hex 16)"
+  bayze serve --config your-config.yaml --port 3470
+  # 然后任何 OpenAI 兼容工具指向 http://127.0.0.1:3470/v1
+  ```
+- `model` 字段 = 工作流 ID（如 `quick_answer` 或 `review_then_revise_cn`）；最后一条 user 消息 = 任务输入。
+- 测试 126/126 全绿。
+
 ## 0.4.0（2026-11-05）—— P1 第一批（ADR-0003）
 
 - **runtime.fx 汇率配置**：`runtime.fx: { rate_to_usd, updated_at }` 使 CNY 定价自动换算为 USD——消除手动折算，预算守卫不再对国产供应商报「价格未知」。未配置时保持 fail-closed（不变）。
