@@ -295,6 +295,29 @@ test('byok 模式（默认）：无账单警告', async () => {
   assert.ok(!res.warnings.some((w) => /账单为准/.test(w)));
 });
 
+test('dogfood 修复：revise 失败时顶层必须报 failed（不能静默 succeeded）', async () => {
+  // 构造：draft 成功 → review 打回 → revise 超时失败（非 auth，不走短路路径）
+  const c = cfg({
+    w: {
+      steps: [
+        { name: 'draft', provider: 'mockmain', model: 'mock-success', input: 'original', timeout_ms: 1000, evaluate: ['non_empty'] },
+        { name: 'review', provider: 'mockmain', model: 'mock-review-revise', input: 'review_template', timeout_ms: 1000, run_if: 'always', gate: 'structured_review', review_schema: ['verdict', 'reasons'] },
+        { name: 'revise', provider: 'mockmain', model: 'mock-timeout', input: 'revision_template', timeout_ms: 1000, run_if: 'review_verdict_is_revise' },
+      ],
+    },
+  });
+  const r = await run(c, 'w', 'test');
+  assert.equal(r.reviewSummary?.verdict, 'revise');
+  assert.equal(r.steps[2]?.status, 'failed');
+  assert.equal(r.steps[2]?.errorCode, 'timeout');
+  // 关键断言：不能报 succeeded
+  assert.equal(r.status, 'failed', `expected failed but got ${r.status}`);
+  assert.equal(r.stopReason, 'workflow_exhausted');
+  assert.ok(r.warnings.some((w) => /did not deliver/.test(w)), JSON.stringify(r.warnings));
+  // finalOutput 仍然是草稿（返回可用内容但不伪报成功）
+  assert.ok(r.finalOutput !== undefined);
+});
+
 test('未知工作流：结构化 setup 错误', async () => {
   const orch = new WorkflowOrchestrator(cfg({ w: { steps: rtr() } }));
   const r = await orch.run({ workflowId: 'ghost', input: 'x' }, { signal: new AbortController().signal });

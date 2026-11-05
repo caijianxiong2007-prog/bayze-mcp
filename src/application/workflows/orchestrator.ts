@@ -109,6 +109,7 @@ export class WorkflowOrchestrator {
     let executed = 0;
     let capSkipped = 0;
     let usedBayzeApi = false;
+    let reviseDelivered = false;
 
     const modeOf = (providerId: string): AccessMode => {
       const p = this.cfg.providers[providerId];
@@ -250,6 +251,7 @@ export class WorkflowOrchestrator {
         lastSuccessOutput = call.value.content;
         finalOutput = call.value.content;
         prior = { kind: 'success' };
+        if (reviewSummary?.verdict === 'revise') reviseDelivered = true;
         stepResults.push(stepResult(idx, step, 'succeeded', stepStart, { usage, estimatedCost: cost, checks }));
         recorded.add(idx);
         opts.onProgress?.({ step: step.name, status: 'succeeded' });
@@ -288,6 +290,11 @@ export class WorkflowOrchestrator {
       else if (finalOutput === undefined && Date.now() >= deadline) stopReason = 'timed_out';
       else if (finalOutput === undefined && step0CheckFailure) stopReason = 'draft_check_failed';
       else if (finalOutput === undefined) stopReason = 'workflow_exhausted';
+      else if (reviewSummary?.verdict === 'revise' && !reviseDelivered) {
+        // dogfood 发现：评审打回但修订步失败时，不能报 succeeded——用户拿到的是已知需修订的草稿
+        stopReason = 'workflow_exhausted';
+        warnings.push('reviewer requested revision but the revise step did not deliver; returning the un-revised draft with failed status');
+      }
       else stopReason = 'completed';
     }
 

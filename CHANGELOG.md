@@ -2,7 +2,11 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
-## 0.3.3（2026-11-05）—— dogfood 发现修复：空 reasons 拒绝 + 受限写作工作流
+## 0.3.4（2026-11-05）—— dogfood 关键修复：revise 失败不能报 succeeded + Ark 模型修正
+
+- **修复 revise 失败时顶层报 succeeded 的 bug（关键）**：dogfood 发现 `_cn` 的 revise 步 404 失败（doubao 模型不存在），但顶层仍报 `succeeded`/`completed`，用户拿到未经修订的草稿却以为已成功。现在：revise 被打回但修订步未交付新输出时，状态必须为 `failed`、stopReason 为 `workflow_exhausted`、warnings 包含明确提示。
+- **修正 Ark 模型 id**：`doubao-pro-32k` 在 Ark 当前版本不存在（已改名 `doubao-seed-*` 系列）。配置与示例改为 `doubao-seed-2-1-pro-260915`（从 Ark /models API 实测获取）。
+- 影响：`_cn` 和 `_cross_intl` 的 revise 分支此前一直是坏的（模型 404），只是从未被触发过（评审全部 accept）；本次修复后 revise 真实可用。
 
 - **空 reasons 橡皮图章修复**：`parseReview` 现在拒绝 `reasons: []`（空数组）——不带任何理由的 accept 不再通过结构化评审门（fail-closed）。dogfood 发现：qwen-plus 曾给出 accept + 空 reasons，gate 直接放行，审计不可接受。
 - **新增 `constrained_writing` 工作流**：确定性 `max_chars: 200` 硬上限——当评审模型不严格卡字数时（三个评审者均少报 30~40 字），由引擎确定性拦截。这是「任务显式约束 → 确定性检查」的 P0 落地方案。
