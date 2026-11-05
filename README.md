@@ -56,6 +56,28 @@ node dist/src/cli.js config path
 
 **接入 AI 客户端**（Claude Desktop / Cursor / Cherry Studio 等支持 MCP 的客户端）：见 [docs/mcp-clients.md](docs/mcp-clients.md)。三工具：`list_workflows`、`run_workflow`（长任务带步骤级进度通知，可取消）、`get_run_summary`。
 
+## 推荐用法
+
+接入客户端后，**直接用自然语言对话即可**——AI 助理会看到工作流的 profile 元数据（质量档位/描述），自动推荐合适的路径。
+
+### 按场景选择
+
+| 场景 | 建议说 | 工作流 | 成本/次 | 耗时 |
+|---|---|---|---|---|
+| 日常问答/翻译/格式转换 | 直接问，或「用 quick_answer 处理：…」 | `quick_answer` | ~$0.001 | ~2s |
+| 重要内容需跨厂商复核 | 「用 review_then_revise_cn 处理：…」 | DeepSeek→通义→豆包 | ~$0.003 | ~8s |
+| 跨境最强评审 | 「用 review_then_revise_cross_intl 处理：…」 | DeepSeek→Claude→豆包 | ~$0.005 | ~10s |
+| 走 Bayze 统一 API 额度 | 「用 review_then_revise_bayze 处理：…」 | Bayze API 通道 | 按平台账单 | ~10s |
+| 有字数硬约束的写作 | 「用 constrained_writing 写：…（严格 N 字以内）」 | 确定性 max_chars | ~$0.001 | ~2s |
+
+### 实用技巧（来自真实使用经验）
+
+- **硬约束用硬措辞**：「严格 N 字以内」比「N 字左右」有效——前者引擎会确定性检查，后者模型会宽容理解
+- **简单任务别用复核工作流**：多花 3~10 倍费用和 2~5 倍时间，质量提升有限
+- **字数合规看引擎，别信评审自报**：评审模型的字数计数系统性地不准（实测偏差 11~38 字）
+- **追求速度用 BYOK 直连**：Bayez API 通道比直连慢 3~5 倍（多一跳网关）
+- **`status` 不是 `succeeded` 时看 `warnings`**：那里有具体的失败原因和已完成的步骤信息
+
 **接入真实供应商**（BYOK，密钥只放环境变量）：在配置中声明 `kind: openai-compatible`（如 DeepSeek/通义/火山方舟等 OpenAI 兼容端点）或 `kind: anthropic`，设置 `api_key_ref: env:你的变量名`，并从官方价格页核实模型定价（示例中的价格均为假数据）。参考发行示例：
 
 - **大陆向**：[examples/config.cn.example.yaml](examples/config.cn.example.yaml) —— DeepSeek 起草 → 通义 DashScope 评审 → 火山方舟（豆包）修订的跨厂商工作流；含 CNY 定价与 USD 预算（`allow_unknown_price`）的边界说明

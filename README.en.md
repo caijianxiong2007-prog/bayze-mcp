@@ -41,6 +41,28 @@ All endpoint/model IDs are public shapes marked for verification; **all prices a
 
 Works with any MCP client that supports stdio servers (Claude Desktop, Cursor, Cherry Studio, …). See `docs/mcp-clients.md`. Three tools are exposed; `finalOutput` is always flagged `finalOutputUntrusted: true` — model-generated content, not instructions.
 
+## Recommended usage
+
+Once connected, **just talk to your AI assistant naturally** — it sees workflow profiles (quality tier, description) and recommends the right path.
+
+### By scenario
+
+| Scenario | Say this | Workflow | Cost/run | Time |
+|---|---|---|---|---|
+| Quick Q&A / translation | Just ask, or "use quick_answer for: …" | `quick_answer` | ~$0.001 | ~2s |
+| Cross-vendor review needed | "use review_then_revise_cn for: …" | DeepSeek→Qwen→Doubao | ~$0.003 | ~8s |
+| Strongest review (cross-border) | "use review_then_revise_cross_intl for: …" | DeepSeek→Claude→Doubao | ~$0.005 | ~10s |
+| Via Bayze unified API | "use review_then_revise_bayze for: …" | Bayze API channel | per platform bill | ~10s |
+| Hard character-limit writing | "use constrained_writing: … (strictly under N chars)" | deterministic max_chars | ~$0.001 | ~2s |
+
+### Tips (from real-world usage)
+
+- **Use strict wording for hard constraints**: "strictly under N characters" triggers deterministic engine checks; "about N characters" lets the model be lenient
+- **Don't use review workflows for simple tasks**: 3-10x cost and 2-5x latency for marginal quality gain
+- **Trust the engine's character count, not the reviewer's**: reviewer models systematically miscount by 11-38 characters
+- **BYOK is faster than Bayze API**: 3-5x speed difference (extra gateway hop)
+- **When status ≠ succeeded, check warnings**: they contain specific failure reasons and completed step info
+
 ## Documentation
 
 - `docs/baseline-spec.md` — the single source of truth (implementation constraints & acceptance checklist)
