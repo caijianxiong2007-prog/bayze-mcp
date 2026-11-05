@@ -2,6 +2,14 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.4.0（2026-11-05）—— P1 第一批（ADR-0003）
+
+- **runtime.fx 汇率配置**：`runtime.fx: { rate_to_usd, updated_at }` 使 CNY 定价自动换算为 USD——消除手动折算，预算守卫不再对国产供应商报「价格未知」。未配置时保持 fail-closed（不变）。
+- **macOS 钥匙串**：`api_key_ref: "keychain:NAME"` 直接从 macOS Keychain 读取密钥（execFileSync 参数数组，无 shell 注入）。仅 darwin；其他平台返回 keychain_unsupported 并建议 env:。
+- **`bayze models` 命令**：CLI 拉取 Bayze API `/v1/models` 列出可用模型 id。需 `BAYZE_API_KEY`。
+- **per-run max_chars override**：`user_overrides` 新增 `max_chars`（收紧-only）——引擎确定性检查使用 min(原值, 覆盖值)。
+- 测试 126/126 全绿。
+
 ## 0.3.4（2026-11-05）—— dogfood 关键修复：revise 失败不能报 succeeded + Ark 模型修正
 
 - **修复 revise 失败时顶层报 succeeded 的 bug（关键）**：dogfood 发现 `_cn` 的 revise 步 404 失败（doubao 模型不存在），但顶层仍报 `succeeded`/`completed`，用户拿到未经修订的草稿却以为已成功。现在：revise 被打回但修订步未交付新输出时，状态必须为 `failed`、stopReason 为 `workflow_exhausted`、warnings 包含明确提示。

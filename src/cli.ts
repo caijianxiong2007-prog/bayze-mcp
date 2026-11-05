@@ -73,6 +73,8 @@ async function main(argv: string[]): Promise<number> {
       return journalCmd(rest);
     case 'eval':
       return evalCmd(rest);
+    case 'models':
+      return modelsCmd(rest);
     default:
       return fail(USAGE, 2);
   }
@@ -258,6 +260,37 @@ function journalCmd(args: string[]): number {
     return 0;
   }
   return fail(`unknown journal subcommand: ${String(sub)}\n${USAGE}`, 2);
+}
+
+/** 列出 Bayze API 可用模型（P1 / ADR-0003 D3） */
+async function modelsCmd(args: string[]): Promise<number> {
+  const { execFileSync } = await import('node:child_process');
+  process.stderr.write('Fetching Bayze API model catalog...\n');
+  const key = process.env['BAYZE_API_KEY'];
+  if (!key) {
+    process.stderr.write('Error: BAYZE_API_KEY environment variable is not set\n');
+    return 1;
+  }
+  try {
+    const output = execFileSync(
+      'curl',
+      ['-s', '-m', '15', '-H', `Authorization: Bearer ${key}`, 'https://app.lanwealth.com/v1/models'],
+      { encoding: 'utf8', timeout: 20000 },
+    );
+    const parsed = JSON.parse(output) as { data?: Array<{ id: string }> };
+    if (Array.isArray(parsed.data)) {
+      process.stdout.write(`Available models (${parsed.data.length}):\n`);
+      for (const m of parsed.data) {
+        process.stdout.write(`  ${m.id}\n`);
+      }
+      return 0;
+    }
+    process.stderr.write(`Unexpected response: ${output.slice(0, 200)}\n`);
+    return 1;
+  } catch (e) {
+    process.stderr.write(`Error: ${(e as Error).message}\n`);
+    return 1;
+  }
 }
 
 async function readStdin(): Promise<string> {

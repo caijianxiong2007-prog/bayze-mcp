@@ -90,7 +90,14 @@ export class WorkflowOrchestrator {
     }
 
     const warnings: string[] = [];
-    const { maxSteps, totalTimeoutMs, maxCostUsd } = applyOverrides(wf, req.userOverrides, warnings);
+    const { maxSteps, totalTimeoutMs, maxCostUsd, maxChars } = applyOverrides(wf, req.userOverrides, warnings);
+    /** P1/ADR-0003 D4：per-run max_chars 覆盖——收紧-only，注入确定性检查 */
+    const effectiveChecks = (step: (typeof wf.steps)[number]) => {
+      if (maxChars === undefined) return step.evaluate;
+      return step.evaluate.map((c) =>
+        typeof c === 'object' && 'max_chars' in c ? { max_chars: Math.min(c.max_chars, maxChars) } : c,
+      );
+    };
 
     const runId = randomUUID();
     const startedMs = Date.now();
@@ -246,7 +253,7 @@ export class WorkflowOrchestrator {
         continue;
       }
 
-      const checks = runDeterministicChecks(call.value.content, step.evaluate);
+      const checks = runDeterministicChecks(call.value.content, effectiveChecks(step));
       if (checks.every((c) => c.passed)) {
         lastSuccessOutput = call.value.content;
         finalOutput = call.value.content;
@@ -432,10 +439,11 @@ function applyOverrides(
   wf: WorkflowConfig,
   o: UserOverrides | undefined,
   warnings: string[],
-): { maxSteps: number; totalTimeoutMs: number; maxCostUsd: number | undefined } {
+): { maxSteps: number; totalTimeoutMs: number; maxCostUsd: number | undefined; maxChars: number | undefined } {
   let maxSteps = wf.limits.max_steps;
   let totalTimeoutMs = wf.limits.total_timeout_ms;
   let maxCostUsd = wf.limits.max_cost_usd;
+  let maxChars: number | undefined = undefined;
   if (o?.maxSteps !== undefined) {
     const requested = Math.max(1, Math.floor(o.maxSteps));
     if (requested > wf.limits.max_steps) {
@@ -457,18 +465,32 @@ function applyOverrides(
     }
     maxCostUsd = maxCostUsd === undefined ? requested : Math.min(requested, maxCostUsd);
   }
-  return { maxSteps, totalTimeoutMs, maxCostUsd };
+  if (o?.maxChars !== undefined && o.maxChars >= 1) {
+    maxChars = Math.floor(o.maxChars);
+  }
+  return { maxSteps, totalTimeoutMs, maxCostUsd, maxChars };
 }
 
-/** P0：非 USD 定价视为价格未知（ADR-0001 衍生决策） */
+/** P0：非 USD 定价视为价格未知（ADR-0001）；P1：runtime.fx 可换算（ADR-0003 D1） */
 export function makePriceBook(cfg: BayzeConfig): (providerId: string, modelId: string) => PriceInfo | undefined {
+  const fx = cfg.runtime.fx;
   return (providerId, modelId) => {
     const p = cfg.providers[providerId];
     if (!p) return undefined;
     const m = p.models.find((x) => x.id === modelId);
     if (!m?.pricing) return undefined;
-    if (m.pricing.currency.toUpperCase() !== 'USD') return undefined;
-    return { inputPer1m: m.pricing.input_per_1m_tokens, outputPer1m: m.pricing.output_per_1m_tokens };
+    const cur = m.pricing.currency.toUpperCase();
+    if (cur === 'USD') {
+      return { inputPer1m: m.pricing.input_per_1m_tokens, outputPer1m: m.pricing.output_per_1m_tokens };
+    }
+    // P1：配置了汇率则换算为 USD（ADR-0003 D1）
+    if (fx && cur === 'CNY') {
+      return {
+        inputPer1m: m.pricing.input_per_1m_tokens * fx.rate_to_usd,
+        outputPer1m: m.pricing.output_per_1m_tokens * fx.rate_to_usd,
+      };
+    }
+    return undefined;
   };
 }
 

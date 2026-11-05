@@ -52,11 +52,13 @@ export interface CheckResult {
   detail?: string;
 }
 
-/** 仅允许收紧限制（基线 §6）；放宽类覆盖在引擎层拒绝 */
+/** 仅允许收紧限制（基线 §6 + ADR-0003 D4）；放宽类覆盖在引擎层拒绝 */
 export interface UserOverrides {
   totalTimeoutMs?: number;
   maxSteps?: number;
   maxCostUsd?: number;
+  /** 确定性字数硬上限（收紧-only）：注入到每个有 max_chars 检查的步骤 */
+  maxChars?: number;
 }
 
 export interface RunRequest {

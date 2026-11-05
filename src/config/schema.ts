@@ -134,6 +134,14 @@ const runtimeSchema = z
   .object({
     max_concurrency: z.number().int().min(1).default(2),
     max_queue_size: z.number().int().min(0).default(4),
+    /** 汇率表（P1 / ADR-0003 D1）：CNY→USD 换算，消除手动折算 */
+    fx: z
+      .object({
+        rate_to_usd: z.number().positive(),
+        updated_at: z.string().min(1),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .prefault({}); // zod v4：先以 {} 作为输入过 schema，由字段默认值补齐

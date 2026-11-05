@@ -71,6 +71,7 @@ export function buildMcpServer(app: McpApp, serverInfo: { version: string }): Mc
             max_steps: z.number().int().min(1).optional(),
             total_timeout_ms: z.number().int().min(1).optional(),
             max_cost_usd: z.number().min(0).optional(),
+            max_chars: z.number().int().min(1).optional(),
           })
           .strict()
           .optional()
@@ -110,6 +111,7 @@ export function buildMcpServer(app: McpApp, serverInfo: { version: string }): Mc
                 maxSteps: args.overrides.max_steps,
                 totalTimeoutMs: args.overrides.total_timeout_ms,
                 maxCostUsd: args.overrides.max_cost_usd,
+                maxChars: args.overrides.max_chars,
               }
             : undefined,
         },
