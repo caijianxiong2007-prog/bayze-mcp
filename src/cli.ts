@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// bayze CLI：config（校验）/ run（执行工作流）/ mcp（stdio server）/ journal（摘要管理）
+// bayze CLI：config / run / mcp / journal / eval（评测对比）
 import { createRequire } from 'node:module';
 import { loadConfig, formatConfigError } from './config/loader.js';
 import { defaultConfigPath, defaultJournalPath } from './config/paths.js';
@@ -9,6 +9,8 @@ import { RunJournal } from './journal/journal.js';
 import { McpApp } from './transport/mcp/app.js';
 import { startStdioServer } from './transport/mcp/server.js';
 import { guardRuntimeEnv } from './cli-guard.js';
+import { loadTasks, runEvaluation, formatEvalComparison } from './application/eval.js';
+import type { EvalSummary } from './application/eval.js';
 import type { RunRequest, UserOverrides } from './domain/types.js';
 
 const require_ = createRequire(import.meta.url);
@@ -24,6 +26,9 @@ commands:
   journal path                                print the default journal path
   journal clear                               delete the journal file
   journal tail [n]                            show the last n run summaries (default 20)
+  eval --workflow <id> --tasks <path>         run evaluation tasks through a workflow
+       [--compare <id>] [--config <path>]
+       [--no-journal]
 
 run options:
   --config <path>     config file (default: OS user config dir)
@@ -66,6 +71,8 @@ async function main(argv: string[]): Promise<number> {
       return mcpCmd(rest);
     case 'journal':
       return journalCmd(rest);
+    case 'eval':
+      return evalCmd(rest);
     default:
       return fail(USAGE, 2);
   }
@@ -259,6 +266,47 @@ async function readStdin(): Promise<string> {
     chunks.push(chunk as Buffer);
   }
   return Buffer.concat(chunks).toString('utf8');
+}
+
+/** 评测运行器：读取任务集 → 通过指定工作流执行 → 输出汇总/对比（后续计划 v1.0 增量 C/D） */
+async function evalCmd(args: string[]): Promise<number> {
+  let configPath: string | undefined;
+  let workflowId: string | undefined;
+  let compareId: string | undefined;
+  let tasksPath: string | undefined;
+  let noJournal = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--config') { const v = args[++i]; if (!v) return fail('--config requires a path', 2); configPath = v; }
+    else if (a === '--workflow') { const v = args[++i]; if (!v) return fail('--workflow requires an id', 2); workflowId = v; }
+    else if (a === '--compare') { const v = args[++i]; if (!v) return fail('--compare requires an id', 2); compareId = v; }
+    else if (a === '--tasks') { const v = args[++i]; if (!v) return fail('--tasks requires a path', 2); tasksPath = v; }
+    else if (a === '--no-journal') noJournal = true;
+    else return fail(`unknown option: ${a}`, 2);
+  }
+  if (!workflowId) return fail('--workflow is required', 2);
+  if (!tasksPath) return fail('--tasks is required (e.g. eval/tasks.example.json)', 2);
+
+  const loaded = loadConfig(configPath ?? defaultConfigPath());
+  if (!loaded.ok) return fail(formatConfigError(loaded.error), 1);
+
+  const journal = new RunJournal(noJournal ? null : defaultJournalPath());
+  const tasks = loadTasks(tasksPath);
+  process.stderr.write(`[bayze eval] ${tasks.length} tasks → workflow "${workflowId}"${compareId ? ` (compare: "${compareId}")` : ''}\n`);
+
+  const primary = new WorkflowOrchestrator(loaded.value);
+  const summary = await runEvaluation(primary, loaded.value, workflowId, tasks);
+
+  if (compareId) {
+    const compareOrch = new WorkflowOrchestrator(loaded.value);
+    const compareSummary = await runEvaluation(compareOrch, loaded.value, compareId, tasks);
+    process.stdout.write(formatEvalComparison(summary, compareSummary) + '\n\n');
+    process.stdout.write(JSON.stringify({ baseline: summary, candidate: compareSummary }, null, 2) + '\n');
+  } else {
+    process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+  }
+  return summary.failed > 0 ? 1 : 0;
 }
 
 main(process.argv.slice(2)).then(

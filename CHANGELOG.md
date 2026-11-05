@@ -2,10 +2,13 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
-## 0.3.0（2026-11-05）—— quick_answer + 任务 profile（后续计划 v1.0 增量 A/B）
+## 0.3.1（2026-11-05）—— 任务 profile（增量 B）
+
+## 0.3.0（2026-11-05）—— quick_answer + 任务 profile + 评测工具（后续计划 v1.0 增量 A/B/C/D）
 
 - **`quick_answer` 工作流**：单模型一步完成、无评审门——最便宜最快速的模型调用方式。
 - **任务 profile**：workflow 新增可选 `profile` 字段（`category` / `quality_tier` / `description` / `max_input_chars`），`list_workflows` 自动携带。AI 客户端可据此推荐合适工作流。P0 不部署隐式 LLM 分类器，由用户显式选择。
+- **评测工具 `bayze eval`**：读取任务集 JSON → 通过指定工作流逐条执行 → 汇总成功率/费用/延迟/token；`--compare <id>` 同时跑两个工作流并输出对比表（token 节省/费用差异/延迟对比/按类别分组）。附示例任务集 `eval/tasks.example.json`（25 个任务，翻译/问答/写作三类）。
 - 测试 119/119 全绿；真实推理验证通过。
 
 ## 0.2.0（2026-11-04）—— 双接入模式（基线 v0.4.1）

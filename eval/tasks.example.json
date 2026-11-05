@@ -1,0 +1,29 @@
+[
+  { "id": "tr001", "category": "translation", "input": "把这句话翻译成英文：开源软件的核心价值在于可审计性" },
+  { "id": "tr002", "category": "translation", "input": "把这句话翻译成英文：人工智能不会取代人类，但使用人工智能的人会取代不使用的人" },
+  { "id": "tr003", "category": "translation", "input": "把这句话翻译成英文：数据是新石油，但隐私是人权" },
+  { "id": "tr004", "category": "translation", "input": "Translate to Chinese: The best time to plant a tree was 20 years ago. The second best time is now." },
+  { "id": "tr005", "category": "translation", "input": "Translate to Chinese: Simplicity is the ultimate sophistication." },
+  { "id": "tr006", "category": "translation", "input": "把这段话翻译成英文：供应链安全的核心是确保从上游社区到最终产品的全链路可信。每个环节都引入了风险，也提供了治理机会。" },
+  { "id": "tr007", "category": "translation", "input": "把这句话翻译成英文：技术中立，使用者决定其善恶" },
+  { "id": "tr008", "category": "translation", "input": "Translate to Chinese: Microservices are not a silver bullet; they trade development speed for operational complexity." },
+  { "id": "tr009", "category": "translation", "input": "把这句话翻译成英文：所有模型都是错的，但有些是有用的" },
+  { "id": "tr010", "category": "translation", "input": "Translate to Chinese: The purpose of software engineering is to control complexity, not to create it." },
+
+  { "id": "qa001", "category": "qa", "input": "什么是 MCP 协议？用两句话解释。" },
+  { "id": "qa002", "category": "qa", "input": "HTTP 和 HTTPS 的主要区别是什么？" },
+  { "id": "qa003", "category": "qa", "input": "什么是 DNS 劫持？举一个实际危害。" },
+  { "id": "qa004", "category": "qa", "input": "解释什么是零信任安全架构。" },
+  { "id": "qa005", "category": "qa", "input": "什么是 SBOM（软件物料清单）？为什么重要？" },
+  { "id": "qa006", "category": "qa", "input": "TLS 1.3 相比 1.2 有哪些主要改进？" },
+  { "id": "qa007", "category": "qa", "input": "什么是 CVE？如何查询某个 CVE 的严重程度？" },
+  { "id": "qa008", "category": "qa", "input": "解释 API 限流的常见算法（令牌桶 vs 漏桶）。" },
+  { "id": "qa009", "category": "qa", "input": "什么是 supply chain attack？举一个著名案例。" },
+  { "id": "qa010", "category": "qa", "input": "BYOK 是什么意思？在 AI 工具场景下有什么优势？" },
+
+  { "id": "wr001", "category": "writing", "input": "写一段 100 字左右的产品介绍：Bayze 是一个本地运行的开源 AI 模型路由工具", "constraints": { "max_chars": 200 } },
+  { "id": "wr002", "category": "writing", "input": "写一封延迟交付致歉邮件的开头段（不超过 80 字）", "constraints": { "max_chars": 160 } },
+  { "id": "wr003", "category": "writing", "input": "用三句话解释瀑布模型与敏捷开发的区别", "constraints": { "max_chars": 300 } },
+  { "id": "wr004", "category": "writing", "input": "写一个 Git commit message 的模板，格式：类型(范围): 描述", "constraints": { "max_chars": 200 } },
+  { "id": "wr005", "category": "writing", "input": "用一句话总结：为什么开源项目的安全审计很重要", "constraints": { "max_chars": 150 } }
+]
