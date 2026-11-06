@@ -108,6 +108,43 @@ test('openai：401 → auth 不可重试，错误体脱敏', async () => {
         assert.equal(r.error.code, 'auth');
         assert.equal(r.error.retryable, false);
         assert.ok(!r.error.message.includes('sk-fakefakefake12'));
+        // byok 模式：不附加 Bayze API 注册引导
+        assert.ok(!r.error.message.includes('lanwealth'));
+      }
+    },
+  );
+});
+
+test('openai：bayze_api 模式 401 → 错误信息附注册入口（转化断点修复）', async () => {
+  const cfg = {
+    kind: 'openai-compatible',
+    base_url: 'https://app.lanwealth.com/v1',
+    mode: 'bayze_api',
+    api_key_ref: `env:${FAKE_ENV}`,
+    allow_insecure_base_url: false,
+    models: [{ id: 'm1' }],
+  } as unknown as RemoteProviderConfig;
+  const adapter = new OpenAICompatibleAdapter('bayze', cfg, new CredentialStore());
+  // 直接打真实主机会依赖网络——此处复用 mapProviderStatus 之上的 chat 组装逻辑，
+  // 用本地回环 + 显式 opt-in 模拟同一错误路径
+  await withServer(
+    (_rq, res) => {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'invalid key' } }));
+    },
+    async (url) => {
+      const local = new OpenAICompatibleAdapter(
+        'bayze',
+        { ...cfg, base_url: url, allow_insecure_base_url: true } as unknown as RemoteProviderConfig,
+        new CredentialStore(),
+      );
+      void adapter;
+      const r = await local.chat(req());
+      assert.ok(!r.ok);
+      if (!r.ok) {
+        assert.equal(r.error.code, 'auth');
+        assert.ok(r.error.message.includes('https://app.lanwealth.com/auth/login'), 'error must carry the signup URL');
+        assert.ok(r.error.message.includes('1,200 free points'));
       }
     },
   );

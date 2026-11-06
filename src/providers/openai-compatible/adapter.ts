@@ -4,6 +4,7 @@ import type { Usage } from '../../domain/types.js';
 import { redactProviderErrorBody } from '../../logging/redact.js';
 import type { CredentialStore } from '../../credentials/store.js';
 import type { RemoteProviderConfig } from '../../config/schema.js';
+import { BAYZE_API_CONSOLE_URL } from '../../config/schema.js';
 import { endpointUrl, postJson } from '../common/http.js';
 import type { AdapterCapabilities, ProviderAdapter, ProviderChatRequest, ProviderChatResponse, ProviderError } from '../types.js';
 
@@ -62,7 +63,12 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       const providerModelId = typeof obj?.['model'] === 'string' ? obj['model'] : undefined;
       return ok({ content, usage, providerModelId });
     }
-    return err(mapProviderStatus(status, body, res.value.headers));
+    const mapped = mapProviderStatus(status, body, res.value.headers);
+    // Bayze API 模式：鉴权失败时附注册入口（1,200 免费积分），缩短「拿到 401 → 弃用」的断点
+    if (mapped.code === 'auth' && this.cfg.mode === 'bayze_api') {
+      mapped.message += ` | Get a key at ${BAYZE_API_CONSOLE_URL} (1,200 free points on signup)`;
+    }
+    return err(mapped);
   }
 }
 

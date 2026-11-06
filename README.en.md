@@ -39,6 +39,16 @@ Configuration is a versioned YAML file: providers (`env:` key references only), 
 
 All endpoint/model IDs are public shapes marked for verification; **all prices are placeholder data** — check official pricing pages.
 
+### Bayze unified API mode (no per-vendor accounts)
+
+If you don't want to register at every vendor or deal with foreign payment methods, declare a provider with `mode: bayze_api`. One account, one balance, one API key (`lw-…`) covering 21+ text models plus image/video, OpenAI-compatible (`base_url` pinned to `https://app.lanwealth.com/v1`). Three steps:
+
+1. **Sign up** (1,200 free points on signup, no credit card): <https://app.lanwealth.com/auth/login>
+2. **Create an API key** in the console, then `export BAYZE_API_KEY=lw-xxxx`
+3. **Start from** `examples/config.bayze.example.yaml` — `bayze config check` detects the mode and prints the same walkthrough
+
+Honest notes: requests are relayed through the Bayze server to the actual vendors (no "local-only processing" claim for this mode); top up with Alipay / WeChat Pay / international cards, pay-as-you-go per the platform bill; model IDs follow the platform catalog; a 401 error message includes the signup link. BYOK and this mode can coexist in one config — pick per workflow.
+
 ## Client setup
 
 Works with any MCP client that supports stdio servers (Claude Desktop, Cursor, Cherry Studio, …). See `docs/mcp-clients.md`. Three tools are exposed; `finalOutput` is always flagged `finalOutputUntrusted: true` — model-generated content, not instructions.

@@ -1,7 +1,8 @@
 # Bayze 统一 API 模式示例（基线 v0.4.1 / ADR-0002）
 #
 # 使用前：
-#   1. 打开 https://app.lanwealth.com 注册/登录、充值，生成 API Key（网站操作，插件不接触密码）
+#   1. 打开 https://app.lanwealth.com/auth/login 注册/登录（注册送 1,200 免费积分），
+#      在控制台生成 API Key（lw- 开头）；充值支持支付宝/微信/国际卡（网站操作，插件不接触密码）
 #   2. export BAYZE_API_KEY=...        （密钥只进环境变量）
 #   3. node dist/src/cli.js config check --config examples/config.bayze.example.yaml --strict
 #   4. node dist/src/cli.js run --workflow review_then_revise_bayze --config examples/config.bayze.example.yaml --input "任务"

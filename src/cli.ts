@@ -2,6 +2,7 @@
 // bayze CLI：config / run / mcp / journal / eval（评测对比）
 import { createRequire } from 'node:module';
 import { loadConfig, formatConfigError } from './config/loader.js';
+import { BAYZE_API_CONSOLE_URL } from './config/schema.js';
 import { defaultConfigPath, defaultJournalPath } from './config/paths.js';
 import { CredentialStore } from './credentials/store.js';
 import { WorkflowOrchestrator } from './application/workflows/orchestrator.js';
@@ -159,11 +160,26 @@ function configCmd(args: string[]): number {
 
   const lines = ['config OK', `path: ${path}`, `version: ${cfg.version}`, 'providers:'];
   for (const [id, p] of Object.entries(cfg.providers)) {
-    lines.push(`  ${id}: kind=${p.kind}, models=${p.models.map((m) => m.id).join(', ')}`);
+    lines.push(`  ${id}: kind=${p.kind}, mode=${p.mode}, models=${p.models.map((m) => m.id).join(', ')}`);
   }
   lines.push('workflows:');
   for (const [id, w] of Object.entries(cfg.workflows)) {
     lines.push(`  ${id}: strategy=${w.strategy}, steps=${w.steps.map((s) => s.name).join(' -> ')}`);
+  }
+  // Bayze API 接入引导（P2 商业闭环）：仅在配置主动声明 mode: bayze_api 时出现
+  const bayzeApiProviders = Object.values(cfg.providers).filter((p) => p.mode === 'bayze_api');
+  if (bayzeApiProviders.length > 0) {
+    const ref = (bayzeApiProviders[0] as { api_key_ref?: string }).api_key_ref;
+    const varName = ref?.startsWith('env:') ? ref.slice('env:'.length) : 'BAYZE_API_KEY';
+    lines.push(
+      '',
+      'Bayze API mode detected. Three steps to connect:',
+      `  1. Sign up / sign in (1,200 free points on signup): ${BAYZE_API_CONSOLE_URL}`,
+      '  2. Create an API key (starts with "lw-") in the console, then export it:',
+      `     export ${varName}=lw-xxxx`,
+      '  3. Re-run with --strict to verify the key resolves. Top up later with',
+      '     Alipay / WeChat Pay / international cards (pay-as-you-go).',
+    );
   }
   process.stdout.write(`${lines.join('\n')}\n`);
   return 0;
