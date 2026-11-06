@@ -2,10 +2,15 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { createRequire } from 'node:module';
 import { MAX_INPUT_CHARS } from '../../application/workflows/orchestrator.js';
 import type { StepProgress } from '../../application/workflows/orchestrator.js';
 import type { BayzeConfig } from '../../config/schema.js';
 import type { McpApp } from './app.js';
+
+const require_ = createRequire(import.meta.url);
+/** 运行时从 package.json 读取（dist/src/transport/mcp → 上 4 级到包根） */
+const VERSION = (require_('../../../../package.json') as { version: string }).version;
 
 /**
  * MCP 工具层（基线 §5 P0）：仅暴露三个有限工具；
@@ -58,7 +63,7 @@ export function buildMcpServer(app: McpApp, serverInfo: { version: string }): Mc
         'List Bayze workflows configured on this machine (ids, limits, step chains). Contains no credentials or endpoints.',
       inputSchema: {},
     },
-    async () => jsonResult({ workflows: workflowsSummary(app.cfg) }),
+    async () => jsonResult({ serverVersion: VERSION, workflows: workflowsSummary(app.cfg) }),
   );
 
   server.registerTool(
