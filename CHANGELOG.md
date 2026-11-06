@@ -2,6 +2,19 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.13.1（2026-11-06）—— Cherry debate 测试反馈修复包
+
+- **修复（关键）**：`context` 字段 MCP 层接收但编排器静默丢弃——用户补充约束被扔掉
+  （Cherry 实测「约束被完全忽略」的真相）。现组装进任务文本（ORIGINAL TASK/UNTRUSTED 块），
+  全策略生效
+- **修复**：debate 双方开场全挂时仍空跑裁决（白花一次 arbiter 调用）并发出
+  「降级 transcript」的空头承诺（空 exchanges 无 transcript 可降）。现零立场快速失败：
+  不跑裁决、警告如实、finalOutput 缺省
+- 修复：debate 警告口径与实际执行一致（rounds held/configured）
+- live 配置预算对齐：maxOutputTokens 2500 ≈ 3800 汉字 ≥ 开场 max_chars 4000 可容纳产出
+  ——此前 token 预算允许模型写到必然被字符闸拒绝的长度（实测 3441/2908 字 vs 闸 2000）
+- 190 测试全绿（+2 context 注入/零立场快速失败）
+
 ## 0.13.0（2026-11-06）—— 多 AI 协作第三批：debate 辩论策略（ADR-0006 D7）
 
 - 新增 `strategy: debate`：恰好 2 个辩手步骤 + 必配 `judge`（裁决者）+ 可选 `rounds`（默认 1，上限 3）

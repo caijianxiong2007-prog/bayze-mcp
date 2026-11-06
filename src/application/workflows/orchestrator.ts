@@ -80,6 +80,12 @@ export class WorkflowOrchestrator {
     if (req.input.length > MAX_INPUT_CHARS) {
       return err({ code: 'input_too_large', message: `input is ${req.input.length} chars; hard limit is ${MAX_INPUT_CHARS}` });
     }
+    // context 组装（0.13.1 修复：MCP 层此前接收 context 但编排器丢弃——用户的补充约束被静默扔掉）。
+    // context 与 input 同为任务文本，进入模板的 ORIGINAL TASK（UNTRUSTED）块。
+    const reqWithTask: RunRequest = req.context
+      ? { ...req, input: `${req.input}\n\n=== CONTEXT (supplementary requirements / background) ===\n${req.context}` }
+      : req;
+    const taskInput = reqWithTask.input;
     for (const step of wf.steps) {
       if (this.adapters.has(step.provider)) continue;
       const pcfg = this.cfg.providers[step.provider];
@@ -94,7 +100,7 @@ export class WorkflowOrchestrator {
     // P2-④ 人工批准：预估总费用超过门槛且用户未确认 → 暂停（对全部策略生效，先于策略分发——
     // 0.12.0 修复：此前审批检查位于 parallel 分发之后，parallel/moa 会绕过批准）
     if (wf.limits.approval_threshold_usd !== undefined && req.userOverrides?.approved !== true) {
-      const estTotal = this.estimateWorkflowCost(wf, req.input);
+      const estTotal = this.estimateWorkflowCost(wf, taskInput);
       if (estTotal !== undefined && estTotal >= wf.limits.approval_threshold_usd) {
         return {
           ok: true,
@@ -115,12 +121,12 @@ export class WorkflowOrchestrator {
 
     // parallel / moa 策略：多模型同时执行同一任务（P1 / ADR-0005 D1、ADR-0006 D6）
     if (wf.strategy === 'parallel' || wf.strategy === 'moa') {
-      return this.runParallel(wf, req, opts);
+      return this.runParallel(wf, reqWithTask, opts);
     }
 
     // debate 策略（ADR-0006 D7）：双方独立开场 → K 轮同时反驳 → 裁决者综观全程出最终答案
     if (wf.strategy === 'debate') {
-      return this.runDebate(wf, req, opts);
+      return this.runDebate(wf, reqWithTask, opts);
     }
 
     const warnings: string[] = [];
@@ -189,7 +195,7 @@ export class WorkflowOrchestrator {
       }
 
       const prompt = renderStepPrompt(step.input, {
-        original: req.input,
+        original: taskInput,
         previousOutput: lastSuccessOutput,
         reviewFeedback: reviewSummary,
         reviewSchemaFields: step.review_schema ?? ['verdict', 'reasons'],
@@ -363,7 +369,7 @@ export class WorkflowOrchestrator {
         warnings.push(`escalation skipped: provider "${esc.provider}" unavailable`);
       } else {
         const prompt = renderStepPrompt('revision_template', {
-          original: req.input,
+          original: taskInput,
           previousOutput: lastSuccessOutput,
           reviewFeedback: reviewSummary,
           reviewSchemaFields: ['verdict', 'reasons'],
@@ -887,7 +893,24 @@ export class WorkflowOrchestrator {
     }
 
     // ③ 裁决：综观全程，输出最终答案（自由文本 + judge.evaluate 确定性检查）
+    // 0.13.1：零立场时直接失败收场——无辩可裁，不再空跑裁决（此前会对空 exchanges 裁决并白花一次调用）
     const arbiter = wf.judge!;
+    if (exchanges.length === 0) {
+      warnings.push('debate: no debater held a position (openings failed their deterministic checks); nothing to arbitrate');
+      const emptyResult: RunResult = {
+        runId, status: 'failed', finalOutput: undefined, steps: stepResults, stopReason: 'workflow_exhausted', warnings,
+      };
+      if (opts.journal?.enabled) {
+        const jr = opts.journal.append({
+          v: 1, ts: new Date().toISOString(), runId, workflowId: req.workflowId,
+          status: 'failed', stopReason: 'workflow_exhausted', durationMs: Date.now() - startedMs,
+          steps: stepResults.map((sr2) => ({ name: sr2.stepName, providerId: sr2.providerId, modelId: sr2.modelId, mode: sr2.mode, status: sr2.status, durationMs: sr2.durationMs, usage: sr2.usage, estimatedCost: sr2.estimatedCost })),
+          warnings,
+        });
+        if (!jr.ok) warnings.push(jr.error);
+      }
+      return { ok: true, value: emptyResult };
+    }
     const verdictPrompt = debateVerdictPrompt({ original: req.input, exchanges });
     const arbStart = Date.now();
     const arbChars = (verdictPrompt.system ?? '').length + verdictPrompt.user.length;
@@ -945,7 +968,8 @@ export class WorkflowOrchestrator {
     const succeededOpenings = openings.filter((o) => o?.ok).length;
     const status: RunStatus = succeededOpenings > 0 ? 'succeeded' : 'failed';
     const stopReason: StopReason = succeededOpenings > 0 ? 'completed' : 'workflow_exhausted';
-    warnings.push(`debate: ${succeededOpenings}/2 debaters opened, ${rounds} rebuttal round(s)`);
+    const roundsHeld = stepResults.filter((sr2) => /-r\d+$/.test(sr2.stepId)).length / 2;
+    warnings.push(`debate: ${succeededOpenings}/2 debaters opened, ${roundsHeld}/${rounds} rebuttal round(s) held`);
 
     if (guard.reserved > 0) warnings.push(`unreleased budget reservation: $${guard.reserved.toFixed(6)}`);
 

@@ -165,3 +165,51 @@ test('debate：裁决超长被 evaluate 拦截 → 降级辩论记录拼接', as
     assert.ok(res.warnings.some((w) => w.includes('arbiter output rejected')));
   }
 });
+
+/** 捕获 prompt 的适配器：验证 context 是否注入任务文本（0.13.1 修复） */
+class CaptureAdapter implements ProviderAdapter {
+  readonly kind = 'mock' as const;
+  lastUser = '';
+  constructor(readonly providerId: string) {}
+  capabilities() { return { streaming: false, json: false, tools: false, vision: false }; }
+  async chat(req: ProviderChatRequest): Promise<Result<ProviderChatResponse, ProviderError>> {
+    this.lastUser = req.user;
+    const mock = new MockProvider('m');
+    const r = await mock.chat({ ...req, modelId: 'mock-success' });
+    return r;
+  }
+}
+
+test('debate：context 注入任务文本（0.13.1 修复——此前 MCP 层接收但编排器丢弃）', async () => {
+  const c = debateCfg();
+  const cap = new CaptureAdapter('m');
+  const orch = new WorkflowOrchestrator(c, new Map<string, ProviderAdapter>([['m', cap]]));
+  const r = await orch.run(
+    { workflowId: 'debate', input: '评估方案', context: '每段发言不超过 300 字' },
+    { signal: new AbortController().signal },
+  );
+  assert.ok(r.ok);
+  assert.ok(cap.lastUser.includes('每段发言不超过 300 字'), 'context 必须出现在开场 prompt');
+  assert.ok(cap.lastUser.includes('CONTEXT (supplementary requirements'));
+});
+
+test('debate：双方开场全挂（max_chars）→ 零立场快速失败，不跑裁决不撒谎（0.13.1）', async () => {
+  const c = debateCfg({
+    steps: [
+      // mock-success 输出约 60 字，max_chars=5 必挂
+      { name: 'a', provider: 'm', model: 'mock-success', input: 'original', timeout_ms: 2000, evaluate: ['non_empty', { max_chars: 5 }] },
+      { name: 'b', provider: 'm', model: 'mock-review-accept', input: 'original', timeout_ms: 2000, evaluate: ['non_empty', { max_chars: 5 }] },
+    ],
+  });
+  const orch = new WorkflowOrchestrator(c, new Map<string, ProviderAdapter>([['m', new MockProvider('m')]]));
+  const r = await orch.run({ workflowId: 'debate', input: '评估' }, { signal: new AbortController().signal });
+  assert.ok(r.ok);
+  if (r.ok) {
+    const res = r.value;
+    assert.equal(res.status, 'failed');
+    assert.equal(res.steps.length, 2, '只有两个开场步，不应有 arbiter');
+    assert.ok(!res.steps.some((s) => s.stepName === 'arbiter'), '零立场不得跑裁决');
+    assert.ok(res.warnings.some((w) => w.includes('nothing to arbitrate')));
+    assert.ok(res.finalOutput === undefined);
+  }
+});
