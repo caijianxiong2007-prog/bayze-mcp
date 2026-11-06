@@ -633,6 +633,9 @@ export class WorkflowOrchestrator {
 
     // MoA 聚合（ADR-0006 D6）：strategy: moa 必配 aggregate；N 份候选合成一份；失败降级拼接对比
     if (wf.strategy === 'moa' && wf.aggregate && outputs.length >= 1) {
+      // 候选全文始终结构化返回（0.12.5：此前仅 judge 路径附 candidates——Cherry 终验发现
+      // moa 路径漏配，降级时原文只在拼接里、成功时完全不可见，审计面不完整）
+      candidates = outputs.map((o) => ({ stepName: o.name, modelId: o.model, content: o.content }));
       const agg = await this.runAggregator(wf, req.input, outputs, {
         guard,
         deadline,

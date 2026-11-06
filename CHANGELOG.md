@@ -2,6 +2,13 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.12.5（2026-11-06）—— Cherry 终验反馈：moa 路径补 candidates
+
+- 修复：candidates 此前仅 judge 选优路径填充——moa 路径成功时候选原文完全不可见、
+  降级时只藏在拼接串里（终验实测发现）。现 moa 无论聚合成功/降级都结构化返回
+  全部候选（审计面完整）；judge 路径不变
+- 184 测试全绿（moa 成功/降级两用例均补 candidates 断言）
+
 ## 0.12.3（2026-11-06）—— Cherry 测试③反馈：max_words 确定性检查
 
 - 新增 `{ max_words: N }` 检查（空白分词，面向英文）：dogfood 四次证实模型报字数

@@ -173,6 +173,7 @@ test('moa：aggregate.evaluate max_chars 拦下超长成品 → 降级拼接对�
     assert.equal(aggStep?.status, 'failed');
     assert.ok(aggStep?.checks.some((ck) => ck.checkId === 'max_chars' && !ck.passed), '失败详情应含 max_chars');
     assert.ok(res.warnings.some((w) => w.includes('aggregate output rejected')));
+    assert.ok(res.candidates && res.candidates.length === 2, 'moa 降级时也应附 candidates（结构化审计面）');
   }
 });
 
@@ -227,6 +228,9 @@ test('moa：聚合成功 → finalOutput=合成文本，aggregate 步骤透明�
     // 两个候选步骤保留 + 聚合步骤
     assert.equal(res.steps.filter((s) => s.stepName.startsWith('model_')).length, 2);
     assert.ok(res.warnings.some((w) => w.includes('aggregated 2 candidate')));
+    // 0.12.5：moa 路径也附 candidates（成功与降级都附）
+    assert.ok(res.candidates && res.candidates.length === 2, 'moa 成功也应附 candidates');
+    assert.ok(res.candidates!.every((c) => typeof c.content === 'string' && c.content.length > 0));
     assert.ok(res.agreement !== undefined);
   }
 });
