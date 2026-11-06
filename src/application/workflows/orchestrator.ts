@@ -21,7 +21,7 @@ import { runDeterministicChecks } from '../../domain/evaluation/checks.js';
 import { parseReview } from '../../domain/evaluation/review.js';
 import { parseJudgeVerdict } from '../../domain/evaluation/judge.js';
 import { answerAgreement } from '../../domain/evaluation/similarity.js';
-import { renderStepPrompt, judgePrompt, aggregatorPrompt } from './templates.js';
+import { renderStepPrompt, judgePrompt, aggregatorPrompt, debateRebuttalPrompt, debateVerdictPrompt } from './templates.js';
 import type { ReviewFeedback } from './templates.js';
 import { BudgetGuard } from './budget.js';
 import type { PriceInfo } from './budget.js';
@@ -116,6 +116,11 @@ export class WorkflowOrchestrator {
     // parallel / moa 策略：多模型同时执行同一任务（P1 / ADR-0005 D1、ADR-0006 D6）
     if (wf.strategy === 'parallel' || wf.strategy === 'moa') {
       return this.runParallel(wf, req, opts);
+    }
+
+    // debate 策略（ADR-0006 D7）：双方独立开场 → K 轮同时反驳 → 裁决者综观全程出最终答案
+    if (wf.strategy === 'debate') {
+      return this.runDebate(wf, req, opts);
     }
 
     const warnings: string[] = [];
@@ -765,6 +770,203 @@ export class WorkflowOrchestrator {
   }
 
   /**
+   * debate 策略（ADR-0006 D7）：开场×2（并行）→ rounds×2 同时反驳 → 裁决者出最终答案。
+   * 每次调用走完整预算流程并独立 StepResult；裁决失败降级为辩论记录拼接（增强不闸门）。
+   */
+  private async runDebate(
+    wf: WorkflowConfig,
+    req: RunRequest,
+    opts: RunOptions,
+  ): Promise<Result<RunResult, RunSetupError>> {
+    const warnings: string[] = [];
+    const runId = randomUUID();
+    const startedMs = Date.now();
+    const deadline = startedMs + wf.limits.total_timeout_ms;
+    const guard = new BudgetGuard(wf.limits.max_cost_usd, wf.limits.allow_unknown_price, makePriceBook(this.cfg));
+    const stepResults: StepResult[] = [];
+    const rounds = wf.rounds;
+
+    const modeOf = (providerId: string): AccessMode => {
+      const p = this.cfg.providers[providerId];
+      return p && p.kind !== 'mock' ? p.mode : 'byok';
+    };
+
+    /** 单次辩手发言（开场/反驳共用）：预算 reserve→call→settle→checks */
+    const speak = async (
+      step: StepConfig,
+      prompt: { system?: string; user: string },
+      label: string,
+    ): Promise<{ ok: boolean; content: string }> => {
+      const stepStart = Date.now();
+      const promptChars = (prompt.system ?? '').length + prompt.user.length;
+      const estimate = guard.estimateCostUsd(promptChars, wf.limits.max_output_tokens, step.provider, step.model);
+      const reservation = guard.reserve(estimate, step.provider, step.model);
+      if (!reservation.ok) {
+        stepResults.push({
+          stepId: label, stepName: `${step.name}`, providerId: step.provider, modelId: step.model,
+          mode: modeOf(step.provider), status: 'budget_exceeded', startedAt: new Date(stepStart).toISOString(),
+          durationMs: 0, checks: [],
+        });
+        warnings.push(reservation.error.message);
+        return { ok: false, content: '' };
+      }
+      const timeoutMs = Math.max(1, Math.min(step.timeout_ms, deadline - Date.now()));
+      const call = await this.callWithRetry(step, prompt, {
+        timeoutMs,
+        retries: step.max_retries ?? wf.limits.max_retries_per_step,
+        signal: opts.signal,
+        maxOutputTokens: wf.limits.max_output_tokens,
+      });
+      const sr: StepResult = {
+        stepId: label, stepName: step.name, providerId: step.provider, modelId: step.model,
+        mode: modeOf(step.provider), status: 'succeeded', startedAt: new Date(stepStart).toISOString(),
+        durationMs: Date.now() - stepStart, checks: [],
+      };
+      if (!call.ok) {
+        guard.release(reservation.value);
+        sr.status = 'failed';
+        sr.errorCode = call.error.code;
+        warnings.push(redactText(`debate step "${label}" failed (${call.error.code}): ${call.error.message.slice(0, 120)}`));
+        stepResults.push(sr);
+        return { ok: false, content: '' };
+      }
+      const cost = guard.settle(reservation.value, call.value.usage, step.provider, step.model, promptChars, wf.limits.max_output_tokens);
+      const checks = runDeterministicChecks(call.value.content, step.evaluate);
+      const allPassed = checks.every((c) => c.passed);
+      sr.checks = checks;
+      sr.status = allPassed ? 'succeeded' : 'failed';
+      if (call.value.usage) sr.usage = call.value.usage;
+      if (cost !== undefined) sr.estimatedCost = cost;
+      stepResults.push(sr);
+      return { ok: allPassed, content: call.value.content };
+    };
+
+    // 适配器就绪（双方 + 裁决者）
+    for (const target of [wf.steps[0]!, wf.steps[1]!, wf.judge!]) {
+      if (this.adapters.has(target.provider)) continue;
+      const pcfg = this.cfg.providers[target.provider];
+      if (!pcfg) return err({ code: 'provider_unavailable', message: `debate references provider "${target.provider}" missing from config` });
+      const created = createProvider(target.provider, pcfg, this.credentials);
+      if (!created.ok) return err({ code: 'provider_unavailable', message: created.error.message });
+      this.adapters.set(target.provider, created.value);
+    }
+
+    const a = wf.steps[0]!;
+    const b = wf.steps[1]!;
+    const exchanges: Array<{ name: string; model: string; round: string; content: string }> = [];
+
+    // ① 开场：双方独立作答（并行；不预设立场，分歧自然涌现）
+    const openings = await Promise.all([
+      speak(a, { user: req.input }, '1.opening'),
+      speak(b, { user: req.input }, '2.opening'),
+    ]);
+    let posA = openings[0]?.ok ? openings[0].content : '';
+    let posB = openings[1]?.ok ? openings[1].content : '';
+    if (posA) exchanges.push({ name: a.name, model: a.model, round: 'opening', content: posA });
+    if (posB) exchanges.push({ name: b.name, model: b.model, round: 'opening', content: posB });
+
+    // ② 反驳轮：双方同时看到对方上一轮立场（同时制=公平，Du et al. 2023）
+    for (let r = 1; r <= rounds; r++) {
+      if (!posA || !posB) {
+        warnings.push(`debate round ${r} skipped: a side failed to hold a position`);
+        break;
+      }
+      if (Date.now() >= deadline || opts.signal.aborted) break;
+      const promptA = debateRebuttalPrompt({ original: req.input, own: posA, opponent: posB, round: r });
+      const promptB = debateRebuttalPrompt({ original: req.input, own: posB, opponent: posA, round: r });
+      const res = await Promise.all([
+        posA ? speak(a, promptA, `${2 * r + 1}.${a.name}-r${r}`) : Promise.resolve({ ok: false, content: '' }),
+        posB ? speak(b, promptB, `${2 * r + 2}.${b.name}-r${r}`) : Promise.resolve({ ok: false, content: '' }),
+      ]);
+      const newA = res[0]?.ok ? res[0].content : posA;
+      const newB = res[1]?.ok ? res[1].content : posB;
+      if (res[0]?.ok) exchanges.push({ name: a.name, model: a.model, round: `round ${r}`, content: newA });
+      if (res[1]?.ok) exchanges.push({ name: b.name, model: b.model, round: `round ${r}`, content: newB });
+      posA = newA;
+      posB = newB;
+    }
+
+    // ③ 裁决：综观全程，输出最终答案（自由文本 + judge.evaluate 确定性检查）
+    const arbiter = wf.judge!;
+    const verdictPrompt = debateVerdictPrompt({ original: req.input, exchanges });
+    const arbStart = Date.now();
+    const arbChars = (verdictPrompt.system ?? '').length + verdictPrompt.user.length;
+    const arbEstimate = guard.estimateCostUsd(arbChars, wf.limits.max_output_tokens, arbiter.provider, arbiter.model);
+    const arbReservation = guard.reserve(arbEstimate, arbiter.provider, arbiter.model);
+    let finalOutput: string | undefined;
+    if (!arbReservation.ok) {
+      warnings.push(arbReservation.error.message);
+    } else {
+      const synthetic = { name: 'arbiter', provider: arbiter.provider, model: arbiter.model } as StepConfig;
+      const timeoutMs = Math.max(1, Math.min(arbiter.timeout_ms ?? 90_000, deadline - Date.now()));
+      const call = await this.callWithRetry(synthetic, verdictPrompt, {
+        timeoutMs, retries: wf.limits.max_retries_per_step, signal: opts.signal, maxOutputTokens: wf.limits.max_output_tokens,
+      });
+      const arbStep: StepResult = {
+        stepId: 'arbiter', stepName: 'arbiter', providerId: arbiter.provider, modelId: arbiter.model,
+        mode: modeOf(arbiter.provider), status: 'succeeded', startedAt: new Date(arbStart).toISOString(),
+        durationMs: Date.now() - arbStart, checks: [],
+      };
+      if (!call.ok) {
+        guard.release(arbReservation.value);
+        arbStep.status = 'failed';
+        arbStep.errorCode = call.error.code;
+        warnings.push(`arbiter failed (${call.error.code}); falling back to debate transcript`);
+        stepResults.push(arbStep);
+      } else {
+        const cost = guard.settle(arbReservation.value, call.value.usage, arbiter.provider, arbiter.model, arbChars, wf.limits.max_output_tokens);
+        const baseChecks = arbiter.evaluate ?? ['non_empty' as const];
+        const checks = runDeterministicChecks(call.value.content, baseChecks);
+        arbStep.checks = checks;
+        if (call.value.usage) arbStep.usage = call.value.usage;
+        if (cost !== undefined) arbStep.estimatedCost = cost;
+        if (checks.every((c) => c.passed)) {
+          finalOutput = call.value.content;
+          warnings.push(`debate: ${exchanges.length} exchange(s) across ${rounds} round(s); arbiter verdict delivered`);
+        } else {
+          arbStep.status = 'failed';
+          const failed = checks.find((c) => !c.passed);
+          warnings.push(`arbiter output rejected (${failed?.checkId ?? 'check'}: ${failed?.detail ?? ''}); falling back to debate transcript`);
+        }
+        stepResults.push(arbStep);
+      }
+    }
+
+    // 降级：辩论记录拼接
+    if (finalOutput === undefined) {
+      finalOutput = exchanges.length > 0
+        ? exchanges.map((e) => `[${e.name}/${e.model} · ${e.round}]\n${e.content}`).join('\n\n---\n\n')
+        : undefined;
+    }
+
+    // 终局立场一致性（辩论是否收敛）
+    const agreement = answerAgreement([posA, posB].filter((p) => p.length > 0));
+
+    const succeededOpenings = openings.filter((o) => o?.ok).length;
+    const status: RunStatus = succeededOpenings > 0 ? 'succeeded' : 'failed';
+    const stopReason: StopReason = succeededOpenings > 0 ? 'completed' : 'workflow_exhausted';
+    warnings.push(`debate: ${succeededOpenings}/2 debaters opened, ${rounds} rebuttal round(s)`);
+
+    if (guard.reserved > 0) warnings.push(`unreleased budget reservation: $${guard.reserved.toFixed(6)}`);
+
+    const result: RunResult = {
+      runId, status, finalOutput, steps: stepResults, stopReason, warnings,
+      ...(agreement !== undefined ? { agreement } : {}),
+    };
+
+    if (opts.journal?.enabled) {
+      const jr = opts.journal.append({
+        v: 1, ts: new Date().toISOString(), runId, workflowId: req.workflowId,
+        status, stopReason, durationMs: Date.now() - startedMs,
+        steps: stepResults.map((s) => ({ name: s.stepName, providerId: s.providerId, modelId: s.modelId, mode: s.mode, status: s.status, durationMs: s.durationMs, usage: s.usage, estimatedCost: s.estimatedCost })),
+        warnings,
+      });
+      if (!jr.ok) warnings.push(jr.error);
+    }
+    return { ok: true, value: result };
+  }
+
+  /**
    * MoA 聚合调用（ADR-0006 D6）：完整预算流程 + 独立 StepResult。
    * 聚合输出为自由文本，除 non_empty 外还执行 aggregate.evaluate 确定性检查
    * （0.12.2：成品此前无字数检查——「重写型步骤天然写长」的结构性缺口）；
@@ -871,10 +1073,16 @@ export class WorkflowOrchestrator {
       const avgStep = total / wf.steps.length;
       total += avgStep * 2 * (wf.limits.max_revisions - 1);
     }
-    // 引擎生成调用（judge/aggregate，ADR-0006 D1/D6）：prompt ≈ 原任务 + 全部候选
+    // debate 放大（ADR-0006 D7）：开场×2 已在 steps 内，反驳轮再 ×rounds，双方计
+    if (wf.strategy === 'debate' && wf.steps.length > 0) {
+      const avgStep = total / wf.steps.length;
+      total += avgStep * 2 * wf.rounds;
+    }
+    // 引擎生成调用（judge/aggregate，ADR-0006 D1/D6/D7）：prompt ≈ 原任务 + 全部候选/辩论记录
     for (const t of [wf.judge, wf.aggregate]) {
       if (!t) continue;
-      const est = guard.estimateCostUsd(input.length * (wf.steps.length + 1), wf.limits.max_output_tokens, t.provider, t.model);
+      const multiplier = wf.strategy === 'debate' ? 2 + wf.rounds * 2 : wf.steps.length + 1;
+      const est = guard.estimateCostUsd(input.length * multiplier, wf.limits.max_output_tokens, t.provider, t.model);
       if (est === undefined) { hasUnknown = true; continue; }
       total += est * (1 + wf.limits.max_retries_per_step);
     }

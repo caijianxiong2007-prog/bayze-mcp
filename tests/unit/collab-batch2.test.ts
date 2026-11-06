@@ -177,8 +177,9 @@ test('moa：aggregate.evaluate max_chars 拦下超长成品 → 降级拼接对�
   }
 });
 
-test('moa schema：judge 不允许 evaluate（judge 输出是引擎解析的 JSON）', () => {
-  assert.throws(() => moaCfg({ judge: { provider: 'm', model: 'mock-success', evaluate: ['non_empty'] } }), /not valid on judge/);
+test('moa schema：judge 不允许（moa 合成不做选优）；evaluate 仅 debate 裁决适用', () => {
+  // 0.13.0 起 judge 在 moa 上整体被拒（debate 的 judge 允许 evaluate——裁决输出自由文本）
+  assert.throws(() => moaCfg({ judge: { provider: 'm', model: 'mock-success', evaluate: ['non_empty'] } }), /judge is not valid for strategy: moa/);
 });
 
 test('moa：per-run maxChars 收紧同样作用于聚合成品', async () => {

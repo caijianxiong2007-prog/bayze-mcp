@@ -2,6 +2,17 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.13.0（2026-11-06）—— 多 AI 协作第三批：debate 辩论策略（ADR-0006 D7）
+
+- 新增 `strategy: debate`：恰好 2 个辩手步骤 + 必配 `judge`（裁决者）+ 可选 `rounds`（默认 1，上限 3）
+- 流程：双方独立开场（不预设立场，分歧自然涌现）→ 每轮同时反驳（看到对方上一轮立场，
+  可攻击/修正/让步）→ 裁决者综观全程：简述哪方更有说服力 + 给出独立成立的最终答案
+- 裁决输出自由文本，走 aggregate 同款管线：`judge.evaluate` 确定性检查（复用 modelTarget.evaluate）、
+  失败降级为辩论记录拼接 + warning（增强不闸门）
+- `agreement` 报告终局立场一致性（辩论是否收敛）；审批预估按 rounds 放大
+- schema：debate 需 judge、恰 2 步、无 run_if/gate；judge.evaluate 允许于 debate（parallel 仍拒绝）
+- 188 测试全绿（+4：schema 边界 / 全流程 / rounds=0 / 裁决拦截降级）
+
 ## 0.12.5（2026-11-06）—— Cherry 终验反馈：moa 路径补 candidates
 
 - 修复：candidates 此前仅 judge 选优路径填充——moa 路径成功时候选原文完全不可见、

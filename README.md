@@ -4,7 +4,7 @@
 
 ![Bayze 终端演示](docs/demo.png)
 
-本地运行、可审计、可扩展的开源 AI 模型路由核心。通过 MCP stdio 接入支持工具调用的 AI 客户端：`review_then_revise` 瀑布工作流（草稿 → 必经结构化评审 → 按需修订）、`parallel` 多模型并行比较（可选评委自动选优）、`moa` 多模型聚合、localhost OpenAI 兼容 API（含 SSE 流式与 Web UI 仪表板）、可选的人工批准门槛（`approval_threshold_usd`）。
+本地运行、可审计、可扩展的开源 AI 模型路由核心。通过 MCP stdio 接入支持工具调用的 AI 客户端：`review_then_revise` 瀑布工作流（草稿 → 必经结构化评审 → 按需修订）、`parallel` 多模型并行比较（可选评委自动选优）、`moa` 多模型聚合、`debate` 双模型辩论+裁决（分析决策类）、localhost OpenAI 兼容 API（含 SSE 流式与 Web UI 仪表板）、可选的人工批准门槛（`approval_threshold_usd`）。
 
 > 状态：**P0 全部阶段（0–5）+ P1 + P2 主体完成** —— 144 项测试全绿；`npm audit` 0 漏洞；`npm ci` 干净安装复现通过；真实供应商在线联调已于 2026-11-03 通过（大陆向跨厂商）。待人工项见[验收状态矩阵](docs/acceptance-status.md)（真实客户端注册核验、Linux/Windows 平台实测）。许可证 MIT。用户自带模型凭证（BYOK）；默认无遥测、无云端组件、无本地监听。
 
@@ -122,6 +122,19 @@ synthesize:
     model: claude-sonnet-4-5        # 必配：合成模型
     evaluate: [non_empty, { max_chars: 400 }]   # 可选：成品确定性检查（聚合倾向写长，建议设上限）
   limits: { max_steps: 3, total_timeout_ms: 180000, max_output_tokens: 8000 }
+  steps:
+    - { name: deepseek, provider: deepseek, model: deepseek-chat, input: original, timeout_ms: 60000, evaluate: [non_empty] }
+    - { name: qwen, provider: dashscope, model: qwen-plus, input: original, timeout_ms: 60000, evaluate: [non_empty] }
+
+# debate 辩论示例：分析/决策类任务——双模型独立开场→互相反驳→Claude 裁决
+weigh_options:
+  strategy: debate
+  judge:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    evaluate: [non_empty, { max_chars: 600 }]   # 裁决成品确定性检查
+  rounds: 1
+  limits: { max_steps: 8, total_timeout_ms: 300000, max_output_tokens: 2000 }
   steps:
     - { name: deepseek, provider: deepseek, model: deepseek-chat, input: original, timeout_ms: 60000, evaluate: [non_empty] }
     - { name: qwen, provider: dashscope, model: qwen-plus, input: original, timeout_ms: 60000, evaluate: [non_empty] }

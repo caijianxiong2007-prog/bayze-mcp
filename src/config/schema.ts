@@ -158,15 +158,17 @@ const modelTarget = z
 
 const workflowSchema = z
   .object({
-    strategy: z.enum(['waterfall', 'parallel', 'moa']),
+    strategy: z.enum(['waterfall', 'parallel', 'moa', 'debate']),
     /** 任务 profile（可选）：让 list_workflows 携带分类信息 */
     profile: taskProfile.optional(),
-    /** parallel 评委自动选优（ADR-0006 D1，仅 parallel）：失败降级为拼接对比 */
+    /** parallel 评委自动选优（ADR-0006 D1，仅 parallel）／debate 裁决者（D7，debate 必配）：失败降级 */
     judge: modelTarget.optional(),
     /** MoA 聚合模型（ADR-0006 D6，仅 moa 且必填）：N 份候选合成一份最终答案 */
     aggregate: modelTarget.optional(),
     /** 修订循环用尽后的升级模型（ADR-0006 D5，仅 waterfall） */
     escalate_to: modelTarget.optional(),
+    /** debate 反驳轮数（ADR-0006 D7，仅 debate）：默认 1，上限 3 */
+    rounds: z.number().int().min(0).max(3).optional().default(1),
     limits: limitsSchema,
     steps: z.array(stepSchema).min(1, 'workflow needs at least one step'),
   })
@@ -174,14 +176,38 @@ const workflowSchema = z
   .superRefine((wf, ctx) => {
     if (wf.strategy === 'waterfall') {
       if (wf.judge !== undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge'], message: 'judge is only valid for strategy: parallel' });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge'], message: 'judge is only valid for strategy: parallel or debate' });
       }
       if (wf.aggregate !== undefined) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['aggregate'], message: 'aggregate is only valid for strategy: moa' });
       }
+      if (wf.rounds !== undefined && wf.rounds !== 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['rounds'], message: 'rounds is only valid for strategy: debate' });
+      }
       wf.steps.forEach((step, i) => {
         if (step.rubric !== undefined && step.gate === undefined) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'rubric'], message: 'rubric is only valid on a step with gate: structured_review' });
+        }
+      });
+    } else if (wf.strategy === 'debate') {
+      if (wf.judge === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge'], message: 'strategy: debate requires judge: { provider, model } as the arbiter' });
+      }
+      if (wf.steps.length !== 2) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps'], message: 'debate needs exactly 2 steps (the two debaters)' });
+      }
+      if (wf.aggregate !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['aggregate'], message: 'aggregate is only valid for strategy: moa' });
+      }
+      if (wf.escalate_to !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['escalate_to'], message: 'escalate_to is only valid for strategy: waterfall' });
+      }
+      wf.steps.forEach((step, i) => {
+        if (step.run_if !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'run_if'], message: 'debate does not support run_if' });
+        }
+        if (step.gate !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'gate'], message: 'debate does not support gate' });
         }
       });
     } else {
@@ -189,8 +215,11 @@ const workflowSchema = z
       if (wf.escalate_to !== undefined) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['escalate_to'], message: 'escalate_to is only valid for strategy: waterfall' });
       }
-      if (wf.judge?.evaluate !== undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge', 'evaluate'], message: 'evaluate is not valid on judge (judge output is engine-parsed JSON); use it on aggregate' });
+      if (wf.rounds !== undefined && wf.rounds !== 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['rounds'], message: 'rounds is only valid for strategy: debate' });
+      }
+      if (wf.strategy === 'parallel' && wf.judge?.evaluate !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge', 'evaluate'], message: 'evaluate is not valid on a parallel judge (selection output is engine-parsed JSON); it is valid for a debate arbiter' });
       }
       if (wf.strategy === 'parallel' && wf.aggregate !== undefined) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['aggregate'], message: 'aggregate is only valid for strategy: moa (use judge for selection)' });

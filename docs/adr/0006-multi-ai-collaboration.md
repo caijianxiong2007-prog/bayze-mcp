@@ -65,6 +65,21 @@ Bayze 已有两种协作策略：waterfall（草稿→结构化评审→按需�
   增强不闸门）。confidence 照常报告。
 - 审批预估（estimateWorkflowCost）把 judge/aggregate 目标一并计入（候选拼接近似翻倍 prompt）。
 
+
+### D7：debate 辩论策略（第三批，2026-11-06 增补）
+
+- 新增 `strategy: debate`：恰好 2 个步骤（debater A/B）+ 必配 `judge`（裁决者）+
+  可选 `rounds`（默认 1，上限 3）。
+- 流程：双方**独立开场**（各自作答，不预设立场——立场由分歧自然涌现，Du et al. 2023
+  多智能体辩论设计）→ 每轮**同时反驳**（各自看到对方上一轮立场，可攻击可修正可让步）
+  → 裁决者综观全程，输出自由文本裁决（简述哪方更有说服力及原因 + 独立成立的最终答案）。
+- 裁决者输出走 aggregate 同款管线：evaluate 确定性检查（复用 judge.evaluate 字段）、
+  失败降级为「辩论记录拼接」+ warning（增强不闸门）。
+- agreement 报告**终局立场**的一致性（辩论是否收敛）。
+- 每次执行（开场×2 + 轮×2 + 裁决×1）都走完整预算流程并独立 StepResult；
+  审批预估按 (rounds+1)× 双方 + 裁决放大。
+- 适用：分析/决策/风险评估类任务；创意与约束型任务不适用（用 judged/moa/waterfall）。
+
 ## 后果
 
 - schema 校验：judge 仅 parallel、escalate_to 仅 waterfall、rubric 仅 gate 步骤、跨引用校验 provider/model 存在。

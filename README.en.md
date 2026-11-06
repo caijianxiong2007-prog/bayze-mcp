@@ -49,6 +49,10 @@ All endpoint/model IDs are public shapes marked for verification; **all prices a
   parallel, then a synthesizer model combines them into one final answer (claims consistent across candidates
   win, single-candidate errors drop) — research-backed to often beat the best single model. Fails open to
   concatenated comparison.
+- **Debate** (`strategy: debate` + required `judge` arbiter + optional `rounds`, default 1): two models open
+  independently, rebut each other for K rounds (stance emerges from disagreement), then an arbiter weighs the
+  arguments and delivers the final answer (with deterministic checks on the verdict). Falls back to the debate
+  transcript if the arbiter fails.
 - **waterfall revision loop**: `limits.max_revisions: 2` re-runs review→revise until accept (default 1 = old
   behavior). Review prompts now carry a scoring rubric (customize with `rubric:` on the gate step) — score each
   item before the verdict. Optional `escalate_to: { provider, model }` hands the final revision to a stronger
