@@ -47,6 +47,21 @@ test('balance：成功展示行含充值直链', () => {
   assert.ok(lines.some((l) => l.includes('https://app.lanwealth.com/dashboard/billing')));
 });
 
+test('balance：月度桶为 0 或已过期 → 不显示套餐行（实测 32543.5/0/过期场景）', () => {
+  const expired = formatBalanceLines(
+    { ok: true, info: { balance: 32543.5, allowance: 0, allowanceExpiresAt: '2026-09-01T06:16:45+00:00' } },
+    'env:BAYZE_API_KEY',
+  );
+  assert.ok(!expired.some((l) => l.includes('allowance')), '0 桶不显示');
+  assert.ok(expired[0]?.includes('32543.5 points'));
+
+  const zeroNoDate = formatBalanceLines({ ok: true, info: { balance: 1, allowance: 0, allowanceExpiresAt: null } }, 'env:BAYZE_API_KEY');
+  assert.ok(!zeroNoDate.some((l) => l.includes('allowance')));
+
+  const active = formatBalanceLines({ ok: true, info: { balance: 1, allowance: 200, allowanceExpiresAt: '2099-01-01T00:00:00Z' } }, 'env:BAYZE_API_KEY');
+  assert.ok(active.some((l) => l.includes('200 points')));
+});
+
 test('balance：端点未上线降级文案 → 指向控制台钱包', () => {
   const lines = formatBalanceLines({ ok: false, code: 'endpoint_unavailable', message: '' }, 'env:BAYZE_API_KEY');
   assert.ok(lines.join('\n').includes('not available yet'));

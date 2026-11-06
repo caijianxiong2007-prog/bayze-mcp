@@ -84,8 +84,10 @@ export async function fetchBayzeBalance(apiKey: string): Promise<BalanceResult> 
 export function formatBalanceLines(r: BalanceResult, keyRef: string): string[] {
   if (r.ok) {
     const lines = [`Bayze API balance: ${r.info.balance} points`];
-    if (r.info.allowance !== null) {
-      lines.push(`Monthly plan allowance: ${r.info.allowance} points${r.info.allowanceExpiresAt ? ` (expires ${r.info.allowanceExpiresAt})` : ''}`);
+    // 月度桶为 0（无套餐或已过期归 0）时不显示，避免「0 points (expires 过去日期)」的困惑
+    const notExpired = r.info.allowanceExpiresAt === null || Date.parse(r.info.allowanceExpiresAt) > Date.now();
+    if (r.info.allowance !== null && r.info.allowance > 0 && notExpired) {
+      lines.push(`Monthly plan allowance: ${r.info.allowance} points (expires ${r.info.allowanceExpiresAt})`);
     }
     lines.push(`Top up: ${BAYZE_API_BILLING_URL}`);
     return lines;
