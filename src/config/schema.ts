@@ -4,7 +4,7 @@ export const CONFIG_VERSION = 1;
 
 export type StepInput = 'original' | 'original_and_previous' | 'review_template' | 'revision_template';
 export type RunIf = 'always' | 'on_check_failure' | 'review_verdict_is_revise';
-export type CheckSpec = 'non_empty' | { max_chars: number };
+export type CheckSpec = 'non_empty' | { max_chars: number } | { max_words: number };
 
 const idPattern = /^[a-z][a-z0-9_-]*$/;
 const envRefPattern = /^env:[A-Za-z_][A-Za-z0-9_]*$/;
@@ -105,7 +105,12 @@ const limitsSchema = z
   .strict();
 export type WorkflowLimits = z.infer<typeof limitsSchema>;
 
-const checkSpec = z.union([z.literal('non_empty'), z.object({ max_chars: z.number().int().positive() }).strict()]);
+const checkSpec = z.union([
+  z.literal('non_empty'),
+  z.object({ max_chars: z.number().int().positive() }).strict(),
+  /** 词数上限（空白分词，面向英文；中文无空格会算 1 词，请用 max_chars）——0.12.3 */
+  z.object({ max_words: z.number().int().positive() }).strict(),
+]);
 
 const stepSchema = z
   .object({
