@@ -43,8 +43,8 @@ All endpoint/model IDs are public shapes marked for verification; **all prices a
 
 - **parallel + judge**: add `judge: { provider, model }` and an arbiter model picks the best candidate —
   `finalOutput` becomes the winner (with `judgeSummary` reason); judge failure falls back to concatenated
-  comparison. Every parallel run also reports `confidence` (0-1, deterministic cross-model agreement signal,
-  zero extra calls).
+  comparison. Every parallel run also reports `agreement` (0-1, deterministic cross-model agreement signal,
+  zero extra calls — it is not any model's self-confidence).
 - **MoA aggregation** (`strategy: moa` + required `aggregate: { provider, model }`): N models answer in
   parallel, then a synthesizer model combines them into one final answer (claims consistent across candidates
   win, single-candidate errors drop) — research-backed to often beat the best single model. Fails open to

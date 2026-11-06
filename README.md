@@ -99,7 +99,7 @@ node dist/src/cli.js run --workflow <你的工作流> --config <你的配置> --
 
 - `parallel` + 评委自动选优：配置 `judge: { provider, model }` 后，引擎让评委模型从多份候选中选出最优，
   `finalOutput` 直接是胜者内容（附 `judgeSummary` 理由）；评委失败自动降级为拼接对比。同时返回
-  `confidence`（0-1，多模型答案的确定性一致性信号，零额外调用）
+  `agreement`（0-1，多模型答案的相互印证程度，零额外调用——不是任何模型的自信度）
 - `waterfall` 修订循环：`limits.max_revisions: 2` 让「评审→修订」循环到 accept 为止（默认 1 次不变）；
   评审提示内置四项评分 rubric（gate 步骤可用 `rubric:` 自定义），先打分再下结论，治评审判准漂移；
   可选 `escalate_to: { provider, model }` 在循环用尽后换强模型做最后一次修订

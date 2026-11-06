@@ -2,6 +2,18 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.12.1（2026-11-06）—— Cherry 测试①反馈修复包
+
+- **改名**：`confidence` → `agreement`——原名字被误解为「评委对选择的把握」；实义是
+  多模型候选间相互印证程度（低=各答各的），改名自释义（API 仅发布 2 天，直接改）
+- **修复**：per-run `max_chars` 收紧覆盖在 parallel/moa 策略未生效（仅 waterfall 应用）——
+  有回归测试钉住
+- **新增**：评委选优成功时 RunResult 附 `candidates`（全部候选全文）——落选版本可核对，
+  不再只能采信评委自述
+- `list_workflows` / `/api/workflows` 暴露 judge/aggregate/escalate_to/max_revisions——
+  AI 客户端不再「看不见隐式步骤的模型」
+- 178 测试全绿（+1）
+
 ## 0.12.0（2026-11-06）—— 多 AI 协作第二批：MoA 聚合策略（ADR-0006 D6）
 
 - 新增 `strategy: moa` + 必配 `aggregate: { provider, model, timeout_ms? }`：

@@ -145,7 +145,7 @@ test('moa schema：缺 aggregate 拒绝；moa+judge 拒绝；parallel+aggregate 
 
 // ────────────────────────── 引擎 ──────────────────────────
 
-test('moa：聚合成功 → finalOutput=合成文本，aggregate 步骤透明记录，confidence 报告', async () => {
+test('moa：聚合成功 → finalOutput=合成文本，aggregate 步骤透明记录，agreement 报告', async () => {
   const c = moaCfg();
   const adapters = new Map<string, ProviderAdapter>([
     ['m', new FixedAggregatorAdapter('m', new MockProvider('m'), '这是融合了两份候选优点的最终答案。')],
@@ -163,7 +163,7 @@ test('moa：聚合成功 → finalOutput=合成文本，aggregate 步骤透明�
     // 两个候选步骤保留 + 聚合步骤
     assert.equal(res.steps.filter((s) => s.stepName.startsWith('model_')).length, 2);
     assert.ok(res.warnings.some((w) => w.includes('aggregated 2 candidate')));
-    assert.ok(res.confidence !== undefined);
+    assert.ok(res.agreement !== undefined);
   }
 });
 

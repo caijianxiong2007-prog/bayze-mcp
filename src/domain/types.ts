@@ -100,8 +100,12 @@ export interface RunResult {
   warnings: string[];
   /** 最近一次结构化评审结论（若有）；模型意见而非事实保证（基线 §7） */
   reviewSummary?: { verdict: 'accept' | 'revise'; reasons: string[] };
-  /** parallel 置信度（ADR-0006 D2）：成功输出间平均两两 Jaccard 相似度，v1 启发式信号而非保证 */
-  confidence?: number;
+  /** parallel/moa 输出一致性（ADR-0006 D2）：成功候选间平均两两 Jaccard 相似度（0-1）。
+   * 语义：多模型答案的相互印证程度——低=各答各的（差异大），高=答案趋同。
+   * 它不是任何模型的自信度，也不是评委会选的把握度。v1 启发式信号而非保证。 */
+  agreement?: number;
   /** parallel 评委选优结论（ADR-0006 D1）；评委失败时省略 */
   judgeSummary?: { winnerStep: string; providerId: string; modelId: string; reason: string };
+  /** 评委选优时的全部候选（可核对评委裁决；仅 judge 成功路径填充，避免 parallel 拼接模式重复膨胀） */
+  candidates?: Array<{ stepName: string; modelId: string; content: string }>;
 }

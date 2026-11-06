@@ -193,7 +193,7 @@ test('answerAgreement：相同=1 / 不可比=0 / 少于 2 份=undefined', () => 
 
 // ────────────────────────── parallel + judge ──────────────────────────
 
-test('parallel+judge：评委选优成功 → finalOutput=胜者内容 + judgeSummary + confidence', async () => {
+test('parallel+judge：评委选优成功 → finalOutput=胜者内容 + judgeSummary + agreement + candidates', async () => {
   const c = judgeConfig();
   const judgeBody = '{"winner":"model_b","reason":"model_b covers edge cases model_a misses"}';
   const adapters = new Map<string, ProviderAdapter>([['m', new JudgeAdapter('m', judgeBody)]]);
@@ -211,7 +211,10 @@ test('parallel+judge：评委选优成功 → finalOutput=胜者内容 + judgeSu
     const judgeStep = res.steps.find((s) => s.stepName === 'judge');
     assert.equal(judgeStep?.status, 'succeeded');
     assert.match(judgeStep?.checks[0]?.detail ?? '', /winner=model_b/);
-    assert.ok(res.confidence !== undefined && res.confidence >= 0 && res.confidence <= 1);
+    assert.ok(res.agreement !== undefined && res.agreement >= 0 && res.agreement <= 1);
+    // 0.12.1：评委选优时附全部候选（可核对评委裁决）
+    assert.ok(res.candidates && res.candidates.length === 2, 'candidates 应含两份候选');
+    assert.ok(res.candidates!.some((c) => c.stepName === 'model_b'));
     assert.ok(res.warnings.some((w) => w.includes('judge selected "model_b"')));
   }
 });
@@ -229,10 +232,11 @@ test('parallel+judge：评委输出非法 → 降级拼接对比 + warning + 失
     assert.ok(res.finalOutput?.includes('---'), '降级为拼接对比');
     assert.ok(res.warnings.some((w) => w.includes('falling back')));
     assert.equal(res.steps.find((s) => s.stepName === 'judge')?.status, 'failed');
+    assert.ok(!res.candidates, '评委失败时不附 candidates');
   }
 });
 
-test('parallel 无 judge：confidence 仍报告（零调用信号）', async () => {
+test('parallel 无 judge：agreement 仍报告（零调用信号）', async () => {
   const c = configSchema.parse({
     version: 1,
     providers: baseProviders(),
@@ -251,8 +255,37 @@ test('parallel 无 judge：confidence 仍报告（零调用信号）', async () 
   const r = await orch.run({ workflowId: 'compare', input: 'x' }, { signal: new AbortController().signal });
   assert.ok(r.ok);
   if (r.ok) {
-    assert.ok(r.value.confidence !== undefined);
+    assert.ok(r.value.agreement !== undefined);
     assert.ok(r.value.judgeSummary === undefined);
+  }
+});
+
+test('parallel：per-run max_chars 收紧覆盖生效（0.12.1 修复——此前仅 waterfall 应用）', async () => {
+  const c = configSchema.parse({
+    version: 1,
+    providers: baseProviders(),
+    workflows: {
+      compare: {
+        strategy: 'parallel',
+        limits: { max_steps: 3, total_timeout_ms: 10000, max_output_tokens: 1000, allow_unknown_price: true },
+        steps: [
+          // mock-success 输出约 60 字；配置阈值 10000，靠 override 收紧到 10 才会拦
+          { name: 'model_a', provider: 'm', model: 'mock-success', input: 'original', timeout_ms: 3000, evaluate: ['non_empty', { max_chars: 10000 }] },
+        ],
+      },
+    },
+  });
+  const orch = new WorkflowOrchestrator(c, new Map<string, ProviderAdapter>([['m', new MockProvider('m')]]));
+  const r = await orch.run(
+    { workflowId: 'compare', input: 'x', userOverrides: { maxChars: 10 } },
+    { signal: new AbortController().signal },
+  );
+  assert.ok(r.ok);
+  if (r.ok) {
+    // mock-success 输出远超 10 字 → 收紧后该步检查失败
+    assert.equal(r.value.steps[0]?.status, 'failed');
+    assert.ok(r.value.steps[0]?.checks.some((ck) => ck.checkId === 'max_chars' && !ck.passed));
+    assert.ok(r.value.finalOutput === undefined);
   }
 });
 

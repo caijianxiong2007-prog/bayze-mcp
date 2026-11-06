@@ -25,7 +25,12 @@ export function workflowsSummary(cfg: BayzeConfig): unknown {
       maxCostUsd: wf.limits.max_cost_usd,
       allowUnknownPrice: wf.limits.allow_unknown_price,
       maxRetriesPerStep: wf.limits.max_retries_per_step,
+      maxRevisions: wf.limits.max_revisions,
     },
+    // 引擎生成的协作角色（ADR-0006）：评委/聚合/升级——对 AI 客户端可见，避免「隐式步骤看不见」
+    ...(wf.judge ? { judge: { provider: wf.judge.provider, model: wf.judge.model } } : {}),
+    ...(wf.aggregate ? { aggregate: { provider: wf.aggregate.provider, model: wf.aggregate.model } } : {}),
+    ...(wf.escalate_to ? { escalateTo: { provider: wf.escalate_to.provider, model: wf.escalate_to.model } } : {}),
     steps: wf.steps.map((s) => {
       const p = cfg.providers[s.provider];
       const mode = p ? p.mode : 'byok';

@@ -490,6 +490,15 @@ export class WorkflowOrchestrator {
       return p && p.kind !== 'mock' ? p.mode : 'byok';
     };
 
+    /** per-run max_chars 收紧覆盖（ADR-0003 D4）——parallel/moa 同样生效（0.12.1 修复：此前仅 waterfall 应用） */
+    const { maxChars } = applyOverrides(wf, req.userOverrides, warnings);
+    const effectiveChecks = (step: (typeof wf.steps)[number]) => {
+      if (maxChars === undefined) return step.evaluate;
+      return step.evaluate.map((c) =>
+        typeof c === 'object' && 'max_chars' in c ? { max_chars: Math.min(c.max_chars, maxChars) } : c,
+      );
+    };
+
     // 并发执行所有步骤
     const promises = wf.steps.map(async (step, idx) => {
       const stepStart = Date.now();
@@ -524,7 +533,7 @@ export class WorkflowOrchestrator {
       }
 
       const cost = guard.settle(reservation.value, call.value.usage, step.provider, step.model, promptChars, wf.limits.max_output_tokens);
-      const checks = runDeterministicChecks(call.value.content, step.evaluate);
+      const checks = runDeterministicChecks(call.value.content, effectiveChecks(step));
       const allPassed = checks.every((c) => c.passed);
       return {
         idx, step, status: (allPassed ? 'succeeded' : 'failed') as RunStatus,
@@ -581,11 +590,12 @@ export class WorkflowOrchestrator {
       ? outputs.map((o) => `[${o.name}/${o.model}]\n${o.content}`).join('\n\n---\n\n')
       : undefined;
 
-    // 置信度（ADR-0006 D2）：成功输出间的确定性一致性信号，零额外调用
-    const confidence = answerAgreement(outputs.map((o) => o.content));
+    // 输出一致性（ADR-0006 D2）：成功候选间的确定性一致性信号，零额外调用
+    const agreement = answerAgreement(outputs.map((o) => o.content));
 
     // 评委自动选优（ADR-0006 D1）：≥2 成功输出且配置了 judge；失败降级为拼接对比
     let judgeSummary: RunResult['judgeSummary'];
+    let candidates: RunResult['candidates'];
     if (wf.judge && outputs.length >= 2) {
       const judged = await this.runJudge(wf, req.input, outputs, {
         guard,
@@ -598,6 +608,7 @@ export class WorkflowOrchestrator {
         judgeSummary = judged.value.summary;
         finalOutput = judged.value.winnerContent;
         stepResults.push(judged.value.step);
+        candidates = outputs.map((o) => ({ stepName: o.name, modelId: o.model, content: o.content }));
         warnings.push(`judge selected "${judged.value.summary.winnerStep}": ${judged.value.summary.reason.slice(0, 160)}`);
       } else {
         warnings.push(judged.error.warning);
@@ -635,8 +646,9 @@ export class WorkflowOrchestrator {
 
     const result: RunResult = {
       runId, status, finalOutput, steps: stepResults, stopReason, warnings,
-      ...(confidence !== undefined ? { confidence } : {}),
+      ...(agreement !== undefined ? { agreement } : {}),
       ...(judgeSummary !== undefined ? { judgeSummary } : {}),
+      ...(candidates !== undefined ? { candidates } : {}),
     };
 
     if (opts.journal?.enabled) {

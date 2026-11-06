@@ -178,6 +178,9 @@ function toConfigSummary(cfg: BayzeConfig): Record<string, unknown> {
     profile: wf.profile,
     steps: wf.steps.map((s) => ({ name: s.name, provider: s.provider, model: s.model })),
     limits: { maxSteps: wf.limits.max_steps, totalTimeoutMs: wf.limits.total_timeout_ms, maxCostUsd: wf.limits.max_cost_usd },
+    ...(wf.judge ? { judge: { provider: wf.judge.provider, model: wf.judge.model } } : {}),
+    ...(wf.aggregate ? { aggregate: { provider: wf.aggregate.provider, model: wf.aggregate.model } } : {}),
+    ...(wf.escalate_to ? { escalateTo: { provider: wf.escalate_to.provider, model: wf.escalate_to.model } } : {}),
   }));
   const providers = Object.entries(cfg.providers).map(([id, p]) => ({
     id,
