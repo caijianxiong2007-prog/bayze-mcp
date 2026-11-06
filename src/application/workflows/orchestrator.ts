@@ -57,7 +57,14 @@ const RETRY_BACKOFF_CAP_MS = 10_000;
 function tokenCapFor(evaluate: unknown[] | undefined, fallback: number): number {
   const mc = (evaluate ?? []).find((c) => typeof c === 'object' && c !== null && 'max_chars' in c) as { max_chars: number } | undefined;
   if (!mc) return fallback;
-  return Math.max(64, Math.min(fallback, Math.ceil(mc.max_chars / 1.4)));
+  // 2.2：Claude 中英混合实测最高 ~2.4 字/token（0.13.3 校正；残余偏差由压缩重试兜底）
+  return Math.max(64, Math.min(fallback, Math.ceil(mc.max_chars / 2.2)));
+}
+
+/** 提取 evaluate 里的 max_chars 闸值（压缩重试用） */
+function maxCharsOf(evaluate: unknown[] | undefined): number | undefined {
+  const mc = (evaluate ?? []).find((c) => typeof c === 'object' && c !== null && 'max_chars' in c) as { max_chars: number } | undefined;
+  return mc?.max_chars;
 }
 
 /**
@@ -956,12 +963,70 @@ export class WorkflowOrchestrator {
         if (checks.every((c) => c.passed)) {
           finalOutput = call.value.content;
           warnings.push(`debate: ${exchanges.length} exchange(s) across ${rounds} round(s); arbiter verdict delivered`);
+          stepResults.push(arbStep);
         } else {
-          arbStep.status = 'failed';
           const failed = checks.find((c) => !c.passed);
-          warnings.push(`arbiter output rejected (${failed?.checkId ?? 'check'}: ${failed?.detail ?? ''}); falling back to debate transcript`);
+          const gate = maxCharsOf(arbiter.evaluate);
+          // 0.13.3：仅 max_chars 超闸时做一次自校准压缩重试——用首次实测 字/token 比率精确钳住 token 上限
+          if (failed?.checkId === 'max_chars' && gate !== undefined) {
+            const ratio = call.value.usage?.outputTokens
+              ? Math.min(Math.max(call.value.content.length / call.value.usage.outputTokens, 1), 3)
+              : 2.2;
+            const retryCap = Math.max(64, Math.ceil(gate / ratio));
+            const retryPrompt = {
+              system: verdictPrompt.system,
+              user: `${verdictPrompt.user}\n\nHARD LIMIT: your previous attempt was ${call.value.content.length} chars; the verdict MUST stay under ${gate} chars. Compress while keeping the decision and its key reasons.`,
+            };
+            const retryStart = Date.now();
+            const retryReserve = guard.reserve(
+              guard.estimateCostUsd(arbChars, retryCap, arbiter.provider, arbiter.model),
+              arbiter.provider, arbiter.model,
+            );
+            if (!retryReserve.ok) {
+              arbStep.status = 'failed';
+              warnings.push(`arbiter output rejected (max_chars ${call.value.content.length} > ${gate}); compress-retry skipped: ${retryReserve.error.message}`);
+              stepResults.push(arbStep);
+            } else {
+              const retry = await this.callWithRetry(synthetic, retryPrompt, {
+                timeoutMs: Math.max(1, Math.min(arbiter.timeout_ms ?? 90_000, deadline - Date.now())),
+                retries: 0, signal: opts.signal, maxOutputTokens: retryCap,
+              });
+              const retryStep: StepResult = {
+                stepId: 'arbiter-retry', stepName: 'arbiter', providerId: arbiter.provider, modelId: arbiter.model,
+                mode: modeOf(arbiter.provider), status: 'succeeded', startedAt: new Date(retryStart).toISOString(),
+                durationMs: Date.now() - retryStart, checks: [],
+              };
+              if (!retry.ok) {
+                guard.release(retryReserve.value);
+                arbStep.status = 'failed';
+                retryStep.status = 'failed';
+                retryStep.errorCode = retry.error.code;
+                warnings.push(`arbiter rejected (max_chars ${call.value.content.length} > ${gate}) and compress-retry failed (${retry.error.code}); falling back to debate transcript`);
+                stepResults.push(arbStep, retryStep);
+              } else {
+                const retryCost = guard.settle(retryReserve.value, retry.value.usage, arbiter.provider, arbiter.model, arbChars, retryCap);
+                const retryChecks = runDeterministicChecks(retry.value.content, baseChecks);
+                retryStep.checks = retryChecks;
+                if (retry.value.usage) retryStep.usage = retry.value.usage;
+                if (retryCost !== undefined) retryStep.estimatedCost = retryCost;
+                if (retryChecks.every((c) => c.passed)) {
+                  finalOutput = retry.value.content;
+                  arbStep.status = 'failed';
+                  warnings.push(`arbiter first attempt over max_chars (${call.value.content.length} > ${gate}); compress-retry delivered (${retry.value.content.length} chars)`);
+                } else {
+                  arbStep.status = 'failed';
+                  retryStep.status = 'failed';
+                  warnings.push(`arbiter rejected (max_chars) and compress-retry still over limit; falling back to debate transcript`);
+                }
+                stepResults.push(arbStep, retryStep);
+              }
+            }
+          } else {
+            arbStep.status = 'failed';
+            warnings.push(`arbiter output rejected (${failed?.checkId ?? 'check'}: ${failed?.detail ?? ''}); falling back to debate transcript`);
+            stepResults.push(arbStep);
+          }
         }
-        stepResults.push(arbStep);
       }
     }
 

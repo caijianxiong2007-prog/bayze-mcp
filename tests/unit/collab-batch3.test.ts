@@ -162,7 +162,7 @@ test('debate：裁决超长被 evaluate 拦截 → 降级辩论记录拼接', as
     assert.ok(res.finalOutput?.includes('---'), '降级为辩论记录拼接');
     assert.ok(res.finalOutput?.includes('opening'), '拼接含开场记录');
     assert.equal(res.steps.find((s) => s.stepName === 'arbiter')?.status, 'failed');
-    assert.ok(res.warnings.some((w) => w.includes('arbiter output rejected')));
+    assert.ok(res.warnings.some((w) => w.includes('still over limit') || w.includes('arbiter output rejected')), '降级警告应在');
   }
 });
 
@@ -238,7 +238,43 @@ test('debate 0.13.2：开场带「只写己方立场」system（防单方开场=
   // 裁决：maxOutputTokens 从 max_chars 800 推导 = ceil(800/1.4)=572，且 < 工作流上限 2000
   const arbiter = seen.find((x) => x.system.includes('impartial arbiter'));
   assert.ok(arbiter, '应有裁决调用');
-  assert.equal(arbiter!.maxOutputTokens, 572, 'token 上限应从字符闸推导');
+  assert.equal(arbiter!.maxOutputTokens, 364, 'token 上限应从字符闸推导（ceil(800/2.2)）');
   // 裁决 system 含「折扣不可验证量化论据」
   assert.ok(arbiter!.system.includes('Discount quantitative claims'), '裁决应折扣编造类论据');
+});
+
+/** 首次裁决超长、压缩重试收敛的适配器（0.13.3 自校准重试） */
+class RetryArbiterAdapter implements ProviderAdapter {
+  readonly kind = 'mock' as const;
+  arbiterCalls = 0;
+  constructor(readonly providerId: string) {}
+  capabilities() { return { streaming: false, json: false, tools: false, vision: false }; }
+  async chat(req: ProviderChatRequest): Promise<Result<ProviderChatResponse, ProviderError>> {
+    if ((req.system ?? '').includes('impartial arbiter')) {
+      this.arbiterCalls++;
+      const isRetry = req.user.includes('HARD LIMIT');
+      const content = isRetry ? 'B 方更有说服力：成本论证被证伪。最终答案：分项迁移。' : '这是第一次裁决，写得非常长非常长非常长非常长非常长非常长非常长非常长非常长非常长非常长非常长，远超十个字的限制，一定会被字符闸拒绝。';
+      return { ok: true, value: { content, usage: { inputTokens: 30, outputTokens: Math.max(1, Math.floor(content.length / 2)) } } };
+    }
+    const mock = new MockProvider('m');
+    return mock.chat({ ...req, modelId: req.modelId === 'mock-review-accept' ? 'mock-success' : req.modelId });
+  }
+}
+
+test('debate 0.13.3：裁决超闸 → 自校准压缩重试成功交付（不再整段丢弃）', async () => {
+  const c = debateCfg({ judge: { provider: 'm', model: 'mock-review-accept', evaluate: [{ max_chars: 40 }] } });
+  const adapter = new RetryArbiterAdapter('m');
+  const orch = new WorkflowOrchestrator(c, new Map<string, ProviderAdapter>([['m', adapter]]));
+  const r = await orch.run({ workflowId: 'debate', input: '评估' }, { signal: new AbortController().signal });
+  assert.ok(r.ok);
+  if (r.ok) {
+    const res = r.value;
+    assert.equal(adapter.arbiterCalls, 2, '裁决应调用两次（首发+压缩重试）');
+    assert.ok(res.finalOutput?.includes('分项迁移'), 'finalOutput 应为压缩后的裁决');
+    const first = res.steps.find((s) => s.stepId === 'arbiter');
+    const retry = res.steps.find((s) => s.stepId === 'arbiter-retry');
+    assert.equal(first?.status, 'failed', '首发超闸记 failed');
+    assert.equal(retry?.status, 'succeeded', '压缩重试成功');
+    assert.ok(res.warnings.some((w) => w.includes('compress-retry delivered')));
+  }
 });
