@@ -284,7 +284,10 @@ test('bayze_api 模式：每步带 mode=bayze_api + 账单警告（种子 mock�
     const res = r.value;
     assert.equal(res.status, 'succeeded');
     assert.ok(res.steps.every((s) => s.mode === 'bayze_api'), '每步 mode=bayze_api');
-    assert.ok(res.warnings.some((w) => /app\.lanwealth\.com 账单为准/.test(w)), JSON.stringify(res.warnings));
+    assert.ok(
+      res.warnings.some((w) => /app\.lanwealth\.com\/dashboard\/billing/.test(w)),
+      `警告应含充值/账单直链: ${JSON.stringify(res.warnings)}`,
+    );
   }
 });
 

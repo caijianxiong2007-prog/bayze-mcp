@@ -2,7 +2,7 @@
 // bayze CLI：config / run / mcp / journal / eval（评测对比）
 import { createRequire } from 'node:module';
 import { loadConfig, formatConfigError } from './config/loader.js';
-import { BAYZE_API_CONSOLE_URL } from './config/schema.js';
+import { BAYZE_API_CONSOLE_URL, BAYZE_API_BILLING_URL } from './config/schema.js';
 import { defaultConfigPath, defaultJournalPath } from './config/paths.js';
 import { CredentialStore } from './credentials/store.js';
 import { WorkflowOrchestrator } from './application/workflows/orchestrator.js';
@@ -177,8 +177,7 @@ function configCmd(args: string[]): number {
       `  1. Sign up / sign in (1,200 free points on signup): ${BAYZE_API_CONSOLE_URL}`,
       '  2. Create an API key (starts with "lw-") in the console, then export it:',
       `     export ${varName}=lw-xxxx`,
-      '  3. Re-run with --strict to verify the key resolves. Top up later with',
-      '     Alipay / WeChat Pay / international cards (pay-as-you-go).',
+      `  3. Verify with --strict. Top up (Alipay / WeChat Pay / international cards): ${BAYZE_API_BILLING_URL}`,
     );
   }
   process.stdout.write(`${lines.join('\n')}\n`);

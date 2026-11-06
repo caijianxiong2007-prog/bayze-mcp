@@ -83,8 +83,11 @@ export type ProviderConfig = z.infer<typeof providerSchema>;
 /** bayze_api 模式的 P0 固定主机白名单（基线 v0.4.1 §6 / ADR-0002 D3） */
 export const BAYZE_API_ALLOWED_HOSTS = ['app.lanwealth.com'] as const;
 
-/** Bayze API 控制台入口：注册/登录、创建 API Key、充值（用户确认于 2026-11-06） */
+/** Bayze API 控制台入口：注册/登录、创建 API Key（用户确认于 2026-11-06） */
 export const BAYZE_API_CONSOLE_URL = 'https://app.lanwealth.com/auth/login';
+
+/** Bayze API 充值/账单页（用户确认于 2026-11-06） */
+export const BAYZE_API_BILLING_URL = 'https://app.lanwealth.com/dashboard/billing';
 
 const limitsSchema = z
   .object({

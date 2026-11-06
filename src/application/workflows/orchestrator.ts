@@ -310,7 +310,7 @@ export class WorkflowOrchestrator {
       warnings.push(`maxSteps=${maxSteps} truncated ${capSkipped} configured step(s)`);
     }
     if (usedBayzeApi) {
-      warnings.push('Bayze API 模式：本地费用仅为估算，实际扣费以 https://app.lanwealth.com 账单为准');
+      warnings.push('Bayze API 模式：本地费用仅为估算，实际扣费以平台账单为准（充值/账单：https://app.lanwealth.com/dashboard/billing）');
     }
 
     // 每步展示接入模式（基线 v0.4.1 §5/§6）

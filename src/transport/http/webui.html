@@ -112,7 +112,9 @@ function render(data) {
       <tr>
         <td><strong>${p.id}</strong></td>
         <td>${p.kind}</td>
-        <td><span class="badge ${p.mode === 'bayze_api' ? 'purple' : 'green'}">${p.mode || 'byok'}</span></td>
+        <td>${p.mode === 'bayze_api'
+          ? `<a href="https://app.lanwealth.com/dashboard/billing" target="_blank" rel="noopener noreferrer" title="充值 / 账单"><span class="badge purple">bayze_api · 充值</span></a>`
+          : `<span class="badge green">${p.mode || 'byok'}</span>`}</td>
         <td class="muted">${p.models?.join(', ') || '—'}</td>
       </tr>
     `).join('');
