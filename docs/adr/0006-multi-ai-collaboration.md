@@ -51,6 +51,20 @@ Bayze 已有两种协作策略：waterfall（草稿→结构化评审→按需�
   成功则交付并标注 escalation 步骤；失败/未配置则保持 D3 行为。
 - 动机：dogfood 中 lite 模型修订能力不足、pro 模型太慢太贵——升级只发生在确有需要时（成本感知）。
 
+
+### D6：MoA 聚合策略（第二批，2026-11-06 增补）
+
+- 新增 `strategy: moa`，必配 `aggregate: { provider, model, timeout_ms? }`：N 个模型并行作答 →
+  聚合模型把 N 份候选**合成一份**最终答案（不是选优，是取长融合——跨候选一致的论断优先、
+  冲突以多数与任务要求裁决）。
+- 与 judge 互斥：judge 仅 parallel（选一份），aggregate 仅 moa（合一份）；同一配置里两种语义
+  不允许并存，避免「两种写法一件事」。
+- 聚合输出是自由文本（非 JSON），仅做 non_empty 确定性检查；聚合调用走完整预算流程并作为
+  独立 StepResult（stepName=aggregate）透明记录。
+- 聚合失败（调用失败/空输出）→ 降级为拼接对比 + warning + 失败步骤记录（与 D1 评委同一哲学：
+  增强不闸门）。confidence 照常报告。
+- 审批预估（estimateWorkflowCost）把 judge/aggregate 目标一并计入（候选拼接近似翻倍 prompt）。
+
 ## 后果
 
 - schema 校验：judge 仅 parallel、escalate_to 仅 waterfall、rubric 仅 gate 步骤、跨引用校验 provider/model 存在。

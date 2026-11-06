@@ -21,7 +21,7 @@ import { runDeterministicChecks } from '../../domain/evaluation/checks.js';
 import { parseReview } from '../../domain/evaluation/review.js';
 import { parseJudgeVerdict } from '../../domain/evaluation/judge.js';
 import { answerAgreement } from '../../domain/evaluation/similarity.js';
-import { renderStepPrompt, judgePrompt } from './templates.js';
+import { renderStepPrompt, judgePrompt, aggregatorPrompt } from './templates.js';
 import type { ReviewFeedback } from './templates.js';
 import { BudgetGuard } from './budget.js';
 import type { PriceInfo } from './budget.js';
@@ -91,12 +91,8 @@ export class WorkflowOrchestrator {
       this.adapters.set(step.provider, created.value);
     }
 
-    // parallel 策略：多模型同时执行同一任务（P1 / ADR-0005 D1）
-    if (wf.strategy === 'parallel') {
-      return this.runParallel(wf, req, opts);
-    }
-
-    // P2-④ 人工批准：预估总费用超过门槛且用户未确认 → 暂停
+    // P2-④ 人工批准：预估总费用超过门槛且用户未确认 → 暂停（对全部策略生效，先于策略分发——
+    // 0.12.0 修复：此前审批检查位于 parallel 分发之后，parallel/moa 会绕过批准）
     if (wf.limits.approval_threshold_usd !== undefined && req.userOverrides?.approved !== true) {
       const estTotal = this.estimateWorkflowCost(wf, req.input);
       if (estTotal !== undefined && estTotal >= wf.limits.approval_threshold_usd) {
@@ -115,6 +111,11 @@ export class WorkflowOrchestrator {
           },
         };
       }
+    }
+
+    // parallel / moa 策略：多模型同时执行同一任务（P1 / ADR-0005 D1、ADR-0006 D6）
+    if (wf.strategy === 'parallel' || wf.strategy === 'moa') {
+      return this.runParallel(wf, req, opts);
     }
 
     const warnings: string[] = [];
@@ -606,6 +607,25 @@ export class WorkflowOrchestrator {
       warnings.push(`judge skipped: need >= 2 successful outputs (got ${outputs.length})`);
     }
 
+    // MoA 聚合（ADR-0006 D6）：strategy: moa 必配 aggregate；N 份候选合成一份；失败降级拼接对比
+    if (wf.strategy === 'moa' && wf.aggregate && outputs.length >= 1) {
+      const agg = await this.runAggregator(wf, req.input, outputs, {
+        guard,
+        deadline,
+        signal: opts.signal,
+        maxOutputTokens: wf.limits.max_output_tokens,
+        maxRetries: wf.limits.max_retries_per_step,
+      });
+      if (agg.ok) {
+        finalOutput = agg.value.content;
+        stepResults.push(agg.value.step);
+        warnings.push(`moa: aggregated ${outputs.length} candidate(s) into the final answer`);
+      } else {
+        warnings.push(agg.error.warning);
+        if (agg.error.step) stepResults.push(agg.error.step);
+      }
+    }
+
     const succeededCount = outputs.length;
     const status: RunStatus = succeededCount > 0 ? 'succeeded' : 'failed';
     const stopReason: StopReason = succeededCount > 0 ? 'completed' : 'workflow_exhausted';
@@ -715,6 +735,82 @@ export class WorkflowOrchestrator {
     });
   }
 
+  /**
+   * MoA 聚合调用（ADR-0006 D6）：完整预算流程 + 独立 StepResult；
+   * 聚合输出为自由文本，仅做 non_empty 确定性检查；任何失败都以 err 返回，由调用方降级。
+   */
+  private async runAggregator(
+    wf: WorkflowConfig,
+    original: string,
+    outputs: Array<{ name: string; model: string; content: string }>,
+    o: { guard: BudgetGuard; deadline: number; signal: AbortSignal; maxOutputTokens: number; maxRetries: number },
+  ): Promise<Result<{ content: string; step: StepResult }, { warning: string; step?: StepResult }>> {
+    const agg = wf.aggregate;
+    if (!agg) return err({ warning: 'aggregate not configured' });
+    if (!this.adapters.has(agg.provider)) {
+      const pcfg = this.cfg.providers[agg.provider];
+      if (!pcfg) return err({ warning: `aggregate provider "${agg.provider}" missing from config; falling back to concatenated comparison` });
+      const created = createProvider(agg.provider, pcfg, this.credentials);
+      if (!created.ok) return err({ warning: `aggregate adapter unavailable: ${created.error.message}` });
+      this.adapters.set(agg.provider, created.value);
+    }
+    const mode = (() => {
+      const p = this.cfg.providers[agg.provider];
+      return p && p.kind !== 'mock' ? p.mode : ('byok' as AccessMode);
+    })();
+
+    const prompt = aggregatorPrompt({ original, candidates: outputs });
+    const promptChars = (prompt.system ?? '').length + prompt.user.length;
+    const estimate = o.guard.estimateCostUsd(promptChars, o.maxOutputTokens, agg.provider, agg.model);
+    const reservation = o.guard.reserve(estimate, agg.provider, agg.model);
+    if (!reservation.ok) return err({ warning: `aggregate skipped: ${reservation.error.message}` });
+
+    const synthetic = { name: 'aggregate', provider: agg.provider, model: agg.model } as StepConfig;
+    const stepStart = Date.now();
+    const timeoutMs = Math.max(1, Math.min(agg.timeout_ms ?? 90_000, o.deadline - Date.now()));
+    const call = await this.callWithRetry(synthetic, prompt, {
+      timeoutMs,
+      retries: o.maxRetries,
+      signal: o.signal,
+      maxOutputTokens: o.maxOutputTokens,
+    });
+    const failedStep = (detail: string, errorCode?: ProviderErrorCode): StepResult => ({
+      stepId: 'aggregate',
+      stepName: 'aggregate',
+      providerId: agg.provider,
+      modelId: agg.model,
+      mode,
+      status: 'failed',
+      startedAt: new Date(stepStart).toISOString(),
+      durationMs: Date.now() - stepStart,
+      checks: [{ checkId: 'aggregate_output', passed: false, detail }],
+      ...(errorCode !== undefined ? { errorCode } : {}),
+    });
+    if (!call.ok) {
+      o.guard.release(reservation.value);
+      return err({ warning: `aggregate call failed (${call.error.code}); falling back to concatenated comparison`, step: failedStep(`call failed: ${call.error.code}`, call.error.code) });
+    }
+    const cost = o.guard.settle(reservation.value, call.value.usage, agg.provider, agg.model, promptChars, o.maxOutputTokens);
+    const checks = runDeterministicChecks(call.value.content, ['non_empty']);
+    if (!checks.every((c) => c.passed)) {
+      return err({ warning: 'aggregate output rejected (non_empty); falling back to concatenated comparison', step: failedStep('aggregate output is empty') });
+    }
+    const step: StepResult = {
+      stepId: 'aggregate',
+      stepName: 'aggregate',
+      providerId: agg.provider,
+      modelId: agg.model,
+      mode,
+      status: 'succeeded',
+      startedAt: new Date(stepStart).toISOString(),
+      durationMs: Date.now() - stepStart,
+      checks,
+      usage: call.value.usage,
+      ...(cost !== undefined ? { estimatedCost: cost } : {}),
+    };
+    return ok({ content: call.value.content, step });
+  }
+
   /** 估算整个工作流的最坏情况费用（P2-④ 人工批准用） */
   private estimateWorkflowCost(wf: WorkflowConfig, input: string): number | undefined {
     const guard = new BudgetGuard(undefined, true, makePriceBook(this.cfg));
@@ -725,6 +821,18 @@ export class WorkflowOrchestrator {
       const est = guard.estimateCostUsd(promptChars, wf.limits.max_output_tokens, step.provider, step.model);
       if (est === undefined) { hasUnknown = true; continue; }
       total += est * (1 + (step.max_retries ?? wf.limits.max_retries_per_step));
+    }
+    // 修订循环放大（ADR-0006 D3）：每多一轮 ≈ 重跑评审+修订两步（按平均步价近似），整体不翻倍
+    if (wf.limits.max_revisions > 1 && wf.steps.length > 0) {
+      const avgStep = total / wf.steps.length;
+      total += avgStep * 2 * (wf.limits.max_revisions - 1);
+    }
+    // 引擎生成调用（judge/aggregate，ADR-0006 D1/D6）：prompt ≈ 原任务 + 全部候选
+    for (const t of [wf.judge, wf.aggregate]) {
+      if (!t) continue;
+      const est = guard.estimateCostUsd(input.length * (wf.steps.length + 1), wf.limits.max_output_tokens, t.provider, t.model);
+      if (est === undefined) { hasUnknown = true; continue; }
+      total += est * (1 + wf.limits.max_retries_per_step);
     }
     return hasUnknown ? undefined : total;
   }

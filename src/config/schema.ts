@@ -151,11 +151,13 @@ const modelTarget = z
 
 const workflowSchema = z
   .object({
-    strategy: z.enum(['waterfall', 'parallel']),
+    strategy: z.enum(['waterfall', 'parallel', 'moa']),
     /** 任务 profile（可选）：让 list_workflows 携带分类信息 */
     profile: taskProfile.optional(),
     /** parallel 评委自动选优（ADR-0006 D1，仅 parallel）：失败降级为拼接对比 */
     judge: modelTarget.optional(),
+    /** MoA 聚合模型（ADR-0006 D6，仅 moa 且必填）：N 份候选合成一份最终答案 */
+    aggregate: modelTarget.optional(),
     /** 修订循环用尽后的升级模型（ADR-0006 D5，仅 waterfall） */
     escalate_to: modelTarget.optional(),
     limits: limitsSchema,
@@ -163,26 +165,40 @@ const workflowSchema = z
   })
   .strict()
   .superRefine((wf, ctx) => {
-    // parallel 策略不允许 run_if 和 gate（所有步骤同时执行）
-    if (wf.strategy === 'parallel') {
-      if (wf.escalate_to !== undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['escalate_to'], message: 'escalate_to is only valid for strategy: waterfall' });
-      }
-      wf.steps.forEach((step, i) => {
-        if (step.run_if !== undefined) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'run_if'], message: 'parallel strategy does not support run_if (all steps run simultaneously)' });
-        }
-        if (step.gate !== undefined) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'gate'], message: 'parallel strategy does not support gate (no review in comparison mode)' });
-        }
-      });
-    } else {
+    if (wf.strategy === 'waterfall') {
       if (wf.judge !== undefined) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge'], message: 'judge is only valid for strategy: parallel' });
+      }
+      if (wf.aggregate !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['aggregate'], message: 'aggregate is only valid for strategy: moa' });
       }
       wf.steps.forEach((step, i) => {
         if (step.rubric !== undefined && step.gate === undefined) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'rubric'], message: 'rubric is only valid on a step with gate: structured_review' });
+        }
+      });
+    } else {
+      // parallel / moa：并发执行，无 run_if 与 gate
+      if (wf.escalate_to !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['escalate_to'], message: 'escalate_to is only valid for strategy: waterfall' });
+      }
+      if (wf.strategy === 'parallel' && wf.aggregate !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['aggregate'], message: 'aggregate is only valid for strategy: moa (use judge for selection)' });
+      }
+      if (wf.strategy === 'moa') {
+        if (wf.aggregate === undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['aggregate'], message: 'strategy: moa requires aggregate: { provider, model }' });
+        }
+        if (wf.judge !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge'], message: 'judge is not valid for strategy: moa (moa synthesizes; judge selects)' });
+        }
+      }
+      wf.steps.forEach((step, i) => {
+        if (step.run_if !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'run_if'], message: `${wf.strategy} strategy does not support run_if (all steps run simultaneously)` });
+        }
+        if (step.gate !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'gate'], message: `${wf.strategy} strategy does not support gate (no review in comparison mode)` });
         }
       });
     }
@@ -267,8 +283,8 @@ export const configSchema = z
     // —— 工作流交叉校验（基线 §7 语义）——
     for (const [wfId, wf] of Object.entries(cfg.workflows)) {
       const base = ['workflows', wfId];
-      // judge / escalate_to 的跨引用校验（ADR-0006）
-      for (const [field, target] of [['judge', wf.judge], ['escalate_to', wf.escalate_to]] as const) {
+      // judge / aggregate / escalate_to 的跨引用校验（ADR-0006）
+      for (const [field, target] of [['judge', wf.judge], ['aggregate', wf.aggregate], ['escalate_to', wf.escalate_to]] as const) {
         if (!target) continue;
         const tp = cfg.providers[target.provider];
         if (!tp) {

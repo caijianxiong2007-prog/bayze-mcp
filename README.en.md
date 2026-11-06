@@ -45,6 +45,10 @@ All endpoint/model IDs are public shapes marked for verification; **all prices a
   `finalOutput` becomes the winner (with `judgeSummary` reason); judge failure falls back to concatenated
   comparison. Every parallel run also reports `confidence` (0-1, deterministic cross-model agreement signal,
   zero extra calls).
+- **MoA aggregation** (`strategy: moa` + required `aggregate: { provider, model }`): N models answer in
+  parallel, then a synthesizer model combines them into one final answer (claims consistent across candidates
+  win, single-candidate errors drop) — research-backed to often beat the best single model. Fails open to
+  concatenated comparison.
 - **waterfall revision loop**: `limits.max_revisions: 2` re-runs review→revise until accept (default 1 = old
   behavior). Review prompts now carry a scoring rubric (customize with `rubric:` on the gate step) — score each
   item before the verdict. Optional `escalate_to: { provider, model }` hands the final revision to a stronger

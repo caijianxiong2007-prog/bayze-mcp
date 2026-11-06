@@ -2,6 +2,18 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.12.0（2026-11-06）—— 多 AI 协作第二批：MoA 聚合策略（ADR-0006 D6）
+
+- 新增 `strategy: moa` + 必配 `aggregate: { provider, model, timeout_ms? }`：
+  N 个模型并行作答 → 聚合模型把候选合成一份最终答案（跨候选一致的论断优先、
+  冲突按任务要求裁决、只出现一次的错误剔除）——学界验证常胜最强单模型
+- 聚合输出自由文本 + non_empty 确定性检查；调用走完整预算流程并作为独立
+  StepResult（stepName=aggregate）透明记录；失败降级为拼接对比（增强不闸门）
+- judge 仅 parallel（选一份）、aggregate 仅 moa（合一份），互斥防「两种写法一件事」
+- 审批预估计入 judge/aggregate 与修订循环放大（每多一轮≈两步均价）
+- **修复**：人工批准检查移到策略分发之前——此前 parallel 策略会绕过审批门槛
+- 177 测试全绿（+5 MoA schema/引擎/审批预估）
+
 ## 0.11.0（2026-11-06）—— 多 AI 协作第一批（ADR-0006）
 
 - parallel 评委自动选优：`judge: {provider, model}` 可选字段，≥2 成功输出时由评委模型从候选中选优，
