@@ -213,3 +213,32 @@ test('debate：双方开场全挂（max_chars）→ 零立场快速失败，不�
     assert.ok(res.finalOutput === undefined);
   }
 });
+
+test('debate 0.13.2：开场带「只写己方立场」system（防单方开场=整场迷你辩论）；裁决 token 上限从字符闸推导', async () => {
+  const c = debateCfg({ judge: { provider: 'm', model: 'mock-review-accept', evaluate: [{ max_chars: 800 }] } });
+  const seen: Array<{ system: string; user: string; maxOutputTokens: number }> = [];
+  class ProbeAdapter implements ProviderAdapter {
+    readonly kind = 'mock' as const;
+    constructor(readonly providerId: string) {}
+    capabilities() { return { streaming: false, json: false, tools: false, vision: false }; }
+    async chat(req: ProviderChatRequest): Promise<Result<ProviderChatResponse, ProviderError>> {
+      seen.push({ system: req.system ?? '', user: req.user, maxOutputTokens: req.maxOutputTokens });
+      const mock = new MockProvider('m');
+      return mock.chat({ ...req, modelId: req.modelId === 'mock-review-accept' ? 'mock-success' : req.modelId });
+    }
+  }
+  const orch = new WorkflowOrchestrator(c, new Map<string, ProviderAdapter>([['m', new ProbeAdapter('m')]]));
+  const r = await orch.run({ workflowId: 'debate', input: '评估任务' }, { signal: new AbortController().signal });
+  assert.ok(r.ok);
+  // 开场：system 含立场限定
+  const openings = seen.filter((x) => x.system.includes('ONE side'));
+  assert.ok(openings.length >= 2);
+  assert.ok(openings.every((x) => x.system.includes('ONE side')), '开场 system 应限定只写己方立场');
+  assert.ok(openings.every((x) => x.system.includes('Do NOT simulate')), '开场应禁止模拟整场辩论');
+  // 裁决：maxOutputTokens 从 max_chars 800 推导 = ceil(800/1.4)=572，且 < 工作流上限 2000
+  const arbiter = seen.find((x) => x.system.includes('impartial arbiter'));
+  assert.ok(arbiter, '应有裁决调用');
+  assert.equal(arbiter!.maxOutputTokens, 572, 'token 上限应从字符闸推导');
+  // 裁决 system 含「折扣不可验证量化论据」
+  assert.ok(arbiter!.system.includes('Discount quantitative claims'), '裁决应折扣编造类论据');
+});

@@ -21,7 +21,7 @@ import { runDeterministicChecks } from '../../domain/evaluation/checks.js';
 import { parseReview } from '../../domain/evaluation/review.js';
 import { parseJudgeVerdict } from '../../domain/evaluation/judge.js';
 import { answerAgreement } from '../../domain/evaluation/similarity.js';
-import { renderStepPrompt, judgePrompt, aggregatorPrompt, debateRebuttalPrompt, debateVerdictPrompt } from './templates.js';
+import { renderStepPrompt, judgePrompt, aggregatorPrompt, debateOpeningPrompt, debateRebuttalPrompt, debateVerdictPrompt } from './templates.js';
 import type { ReviewFeedback } from './templates.js';
 import { BudgetGuard } from './budget.js';
 import type { PriceInfo } from './budget.js';
@@ -50,6 +50,15 @@ export interface RunOptions {
 export const MAX_INPUT_CHARS = 100_000;
 const RETRY_BACKOFF_BASE_MS = 100;
 const RETRY_BACKOFF_CAP_MS = 10_000;
+
+
+/** 引擎生成调用（裁决/聚合）的 token 上限从 evaluate.max_chars 推导（0.13.2）：
+ *  中文 ≈1.4 字/token——物理上不允许模型写到必然被字符闸拒绝的长度，杜绝「整段丢弃白花钱」。 */
+function tokenCapFor(evaluate: unknown[] | undefined, fallback: number): number {
+  const mc = (evaluate ?? []).find((c) => typeof c === 'object' && c !== null && 'max_chars' in c) as { max_chars: number } | undefined;
+  if (!mc) return fallback;
+  return Math.max(64, Math.min(fallback, Math.ceil(mc.max_chars / 1.4)));
+}
 
 /**
  * 瀑布编排器（基线 §7 状态机的执行体）：
@@ -863,8 +872,8 @@ export class WorkflowOrchestrator {
 
     // ① 开场：双方独立作答（并行；不预设立场，分歧自然涌现）
     const openings = await Promise.all([
-      speak(a, { user: req.input }, '1.opening'),
-      speak(b, { user: req.input }, '2.opening'),
+      speak(a, debateOpeningPrompt(req.input), '1.opening'),
+      speak(b, debateOpeningPrompt(req.input), '2.opening'),
     ]);
     let posA = openings[0]?.ok ? openings[0].content : '';
     let posB = openings[1]?.ok ? openings[1].content : '';
@@ -923,7 +932,8 @@ export class WorkflowOrchestrator {
       const synthetic = { name: 'arbiter', provider: arbiter.provider, model: arbiter.model } as StepConfig;
       const timeoutMs = Math.max(1, Math.min(arbiter.timeout_ms ?? 90_000, deadline - Date.now()));
       const call = await this.callWithRetry(synthetic, verdictPrompt, {
-        timeoutMs, retries: wf.limits.max_retries_per_step, signal: opts.signal, maxOutputTokens: wf.limits.max_output_tokens,
+        timeoutMs, retries: wf.limits.max_retries_per_step, signal: opts.signal,
+        maxOutputTokens: tokenCapFor(arbiter.evaluate, wf.limits.max_output_tokens),
       });
       const arbStep: StepResult = {
         stepId: 'arbiter', stepName: 'arbiter', providerId: arbiter.provider, modelId: arbiter.model,
@@ -1029,7 +1039,7 @@ export class WorkflowOrchestrator {
       timeoutMs,
       retries: o.maxRetries,
       signal: o.signal,
-      maxOutputTokens: o.maxOutputTokens,
+      maxOutputTokens: tokenCapFor(agg.evaluate, o.maxOutputTokens),
     });
     const failedStep = (detail: string, errorCode?: ProviderErrorCode): StepResult => ({
       stepId: 'aggregate',
