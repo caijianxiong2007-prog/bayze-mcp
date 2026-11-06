@@ -2,6 +2,19 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 0.11.0（2026-11-06）—— 多 AI 协作第一批（ADR-0006）
+
+- parallel 评委自动选优：`judge: {provider, model}` 可选字段，≥2 成功输出时由评委模型从候选中选优，
+  `finalOutput`=胜者内容 + `judgeSummary`；评委失败降级为拼接对比（评委是增强不是闸门）
+- parallel 置信度信号：`confidence`（0-1）= 成功输出间平均两两相似度（拉丁词+CJK 二元组 Jaccard），
+  确定性、零额外调用
+- waterfall 修订循环：`limits.max_revisions`（默认 1=旧行为），评审仍打回且次数未用尽时跳回评审步重跑
+  「评审→修订」，次数用尽交付最后一次修订并如实警告
+- 评审 rubric：gate 步骤可选 `rubric: [string...]`（缺省四项内置），注入评审提示——先逐项 1-5 打分
+  再下 verdict，治判准漂移
+- 修订循环用尽后的升级：`escalate_to: {provider, model}` 可选，换强模型做最后一次修订并透明记录步骤
+- 172 测试全绿（+10）；既有行为零回归（默认值等价旧行为）
+
 ## 0.7.0（2026-11-05）—— P2 第一批：Dockerfile + 流式输出 + Web UI
 
 - **Dockerfile**：多阶段构建（builder + runtime），非 root 用户，`node:22-alpine` 基础镜像。支持 `docker run -i bayze-mcp`（stdio）和 `docker run -p 3470:3470 bayze-mcp serve`（HTTP）。用于 glama.ai 自动化安全检查。

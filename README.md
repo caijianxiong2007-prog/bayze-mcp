@@ -95,6 +95,33 @@ node dist/src/cli.js config check --config <你的配置> --strict
 node dist/src/cli.js run --workflow <你的工作流> --config <你的配置> --input "任务"
 ```
 
+**多 AI 协作增强**（v0.11.0 / [ADR-0006](docs/adr/0006-multi-ai-collaboration.md)）：
+
+- `parallel` + 评委自动选优：配置 `judge: { provider, model }` 后，引擎让评委模型从多份候选中选出最优，
+  `finalOutput` 直接是胜者内容（附 `judgeSummary` 理由）；评委失败自动降级为拼接对比。同时返回
+  `confidence`（0-1，多模型答案的确定性一致性信号，零额外调用）
+- `waterfall` 修订循环：`limits.max_revisions: 2` 让「评审→修订」循环到 accept 为止（默认 1 次不变）；
+  评审提示内置四项评分 rubric（gate 步骤可用 `rubric:` 自定义），先打分再下结论，治评审判准漂移；
+  可选 `escalate_to: { provider, model }` 在循环用尽后换强模型做最后一次修订
+
+```yaml
+# parallel + 评委选优示例
+compare_judged:
+  strategy: parallel
+  judge: { provider: anthropic, model: claude-sonnet-4-5 }   # 可选：自动选优
+  limits: { max_steps: 3, total_timeout_ms: 120000, max_output_tokens: 8000 }
+  steps:
+    - { name: deepseek, provider: deepseek, model: deepseek-chat, input: original, timeout_ms: 60000, evaluate: [non_empty] }
+    - { name: qwen, provider: dashscope, model: qwen-plus, input: original, timeout_ms: 60000, evaluate: [non_empty] }
+
+# waterfall 修订循环 + 升级示例
+review_loop:
+  strategy: waterfall
+  escalate_to: { provider: anthropic, model: claude-sonnet-4-5 }   # 可选：循环用尽后换强模型
+  limits: { max_steps: 8, total_timeout_ms: 180000, max_output_tokens: 8000, max_revisions: 2 }
+  steps: [ ...draft → review → revise 与常规相同... ]
+```
+
 **Bayze 统一 API 模式**（没有各家账号也能跑）：不想逐家注册/海外支付时，可将 provider 声明为 `mode: bayze_api`（`base_url` 固定 `https://app.lanwealth.com/v1`，OpenAI 兼容）。三步接入：
 
 1. 注册/登录（送 1,200 免费积分，无需信用卡）：<https://app.lanwealth.com/auth/login>

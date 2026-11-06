@@ -100,4 +100,8 @@ export interface RunResult {
   warnings: string[];
   /** 最近一次结构化评审结论（若有）；模型意见而非事实保证（基线 §7） */
   reviewSummary?: { verdict: 'accept' | 'revise'; reasons: string[] };
+  /** parallel 置信度（ADR-0006 D2）：成功输出间平均两两 Jaccard 相似度，v1 启发式信号而非保证 */
+  confidence?: number;
+  /** parallel 评委选优结论（ADR-0006 D1）；评委失败时省略 */
+  judgeSummary?: { winnerStep: string; providerId: string; modelId: string; reason: string };
 }

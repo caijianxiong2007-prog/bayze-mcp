@@ -39,6 +39,17 @@ Configuration is a versioned YAML file: providers (`env:` key references only), 
 
 All endpoint/model IDs are public shapes marked for verification; **all prices are placeholder data** — check official pricing pages.
 
+### Multi-AI collaboration upgrades (v0.11.0, [ADR-0006](docs/adr/0006-multi-ai-collaboration.md))
+
+- **parallel + judge**: add `judge: { provider, model }` and an arbiter model picks the best candidate —
+  `finalOutput` becomes the winner (with `judgeSummary` reason); judge failure falls back to concatenated
+  comparison. Every parallel run also reports `confidence` (0-1, deterministic cross-model agreement signal,
+  zero extra calls).
+- **waterfall revision loop**: `limits.max_revisions: 2` re-runs review→revise until accept (default 1 = old
+  behavior). Review prompts now carry a scoring rubric (customize with `rubric:` on the gate step) — score each
+  item before the verdict. Optional `escalate_to: { provider, model }` hands the final revision to a stronger
+  model when the loop is exhausted.
+
 ### Bayze unified API mode (no per-vendor accounts)
 
 If you don't want to register at every vendor or deal with foreign payment methods, declare a provider with `mode: bayze_api`. One account, one balance, one API key (`lw-…`) covering 21+ text models plus image/video, OpenAI-compatible (`base_url` pinned to `https://app.lanwealth.com/v1`). Three steps:

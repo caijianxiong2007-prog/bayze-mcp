@@ -99,6 +99,8 @@ const limitsSchema = z
     max_retries_per_step: z.number().int().min(0).optional().default(0),
     /** 人工批准门槛（P2-④）：预估费用超过此值时暂停等待用户确认 */
     approval_threshold_usd: z.number().min(0).optional(),
+    /** 修订循环上限（ADR-0006 D3）：waterfall 评审打回后的最大修订执行次数，默认 1=单次（旧行为） */
+    max_revisions: z.number().int().min(1).optional().default(1),
   })
   .strict();
 export type WorkflowLimits = z.infer<typeof limitsSchema>;
@@ -118,6 +120,8 @@ const stepSchema = z
     evaluate: z.array(checkSpec).default([]),
     gate: z.literal('structured_review').optional(),
     review_schema: z.array(z.string().min(1)).optional(),
+    /** 评审 rubric（ADR-0006 D4）：仅 gate 步骤；缺省用内置四项 */
+    rubric: z.array(z.string().min(1)).optional(),
   })
   .strict();
 export type StepConfig = z.infer<typeof stepSchema>;
@@ -136,11 +140,24 @@ const taskProfile = z
   })
   .strict();
 
+/** 引擎生成的跨步骤模型目标（ADR-0006）：judge（parallel 评委）/ escalate_to（waterfall 升级） */
+const modelTarget = z
+  .object({
+    provider: z.string().min(1),
+    model: modelId,
+    timeout_ms: z.number().int().positive().optional(),
+  })
+  .strict();
+
 const workflowSchema = z
   .object({
     strategy: z.enum(['waterfall', 'parallel']),
     /** 任务 profile（可选）：让 list_workflows 携带分类信息 */
     profile: taskProfile.optional(),
+    /** parallel 评委自动选优（ADR-0006 D1，仅 parallel）：失败降级为拼接对比 */
+    judge: modelTarget.optional(),
+    /** 修订循环用尽后的升级模型（ADR-0006 D5，仅 waterfall） */
+    escalate_to: modelTarget.optional(),
     limits: limitsSchema,
     steps: z.array(stepSchema).min(1, 'workflow needs at least one step'),
   })
@@ -148,12 +165,24 @@ const workflowSchema = z
   .superRefine((wf, ctx) => {
     // parallel 策略不允许 run_if 和 gate（所有步骤同时执行）
     if (wf.strategy === 'parallel') {
+      if (wf.escalate_to !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['escalate_to'], message: 'escalate_to is only valid for strategy: waterfall' });
+      }
       wf.steps.forEach((step, i) => {
         if (step.run_if !== undefined) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'run_if'], message: 'parallel strategy does not support run_if (all steps run simultaneously)' });
         }
         if (step.gate !== undefined) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'gate'], message: 'parallel strategy does not support gate (no review in comparison mode)' });
+        }
+      });
+    } else {
+      if (wf.judge !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge'], message: 'judge is only valid for strategy: parallel' });
+      }
+      wf.steps.forEach((step, i) => {
+        if (step.rubric !== undefined && step.gate === undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps', i, 'rubric'], message: 'rubric is only valid on a step with gate: structured_review' });
         }
       });
     }
@@ -238,6 +267,16 @@ export const configSchema = z
     // —— 工作流交叉校验（基线 §7 语义）——
     for (const [wfId, wf] of Object.entries(cfg.workflows)) {
       const base = ['workflows', wfId];
+      // judge / escalate_to 的跨引用校验（ADR-0006）
+      for (const [field, target] of [['judge', wf.judge], ['escalate_to', wf.escalate_to]] as const) {
+        if (!target) continue;
+        const tp = cfg.providers[target.provider];
+        if (!tp) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...base, field, 'provider'], message: `unknown provider "${target.provider}" (configured: ${Object.keys(cfg.providers).join(', ') || 'none'})` });
+        } else if (!tp.models.some((m) => m.id === target.model)) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...base, field, 'model'], message: `provider "${target.provider}" has no model "${target.model}"` });
+        }
+      }
       if (wf.steps.length > wf.limits.max_steps) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

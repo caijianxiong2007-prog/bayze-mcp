@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { err } from '../../domain/errors.js';
+import { err, ok } from '../../domain/errors.js';
 import type { Result } from '../../domain/errors.js';
 import { redactText } from '../../logging/redact.js';
 import type {
@@ -19,7 +19,9 @@ import { isStepEligible } from '../../domain/policies/state-machine.js';
 import type { PriorOutcome } from '../../domain/policies/state-machine.js';
 import { runDeterministicChecks } from '../../domain/evaluation/checks.js';
 import { parseReview } from '../../domain/evaluation/review.js';
-import { renderStepPrompt } from './templates.js';
+import { parseJudgeVerdict } from '../../domain/evaluation/judge.js';
+import { answerAgreement } from '../../domain/evaluation/similarity.js';
+import { renderStepPrompt, judgePrompt } from './templates.js';
 import type { ReviewFeedback } from './templates.js';
 import { BudgetGuard } from './budget.js';
 import type { PriceInfo } from './budget.js';
@@ -143,13 +145,20 @@ export class WorkflowOrchestrator {
     let capSkipped = 0;
     let usedBayzeApi = false;
     let reviseDelivered = false;
+    /** 修订循环状态（ADR-0006 D3/D5） */
+    const maxRevisions = wf.limits.max_revisions;
+    let revisionsDone = 0;
+    let gateIdx: number | undefined;
+    let startIdx = 0;
 
     const modeOf = (providerId: string): AccessMode => {
       const p = this.cfg.providers[providerId];
       return p && p.kind !== 'mock' ? p.mode : 'byok';
     };
 
-    for (let idx = 0; idx < wf.steps.length; idx++) {
+    // 外层修订循环（ADR-0006 D3）：单轮线性执行完毕后，若评审仍打回且修订已交付且次数未用尽 → 跳回评审步
+    while (true) {
+    for (let idx = startIdx; idx < wf.steps.length; idx++) {
       const step = wf.steps[idx];
       if (!step) break;
       if (opts.signal.aborted) {
@@ -178,6 +187,7 @@ export class WorkflowOrchestrator {
         previousOutput: lastSuccessOutput,
         reviewFeedback: reviewSummary,
         reviewSchemaFields: step.review_schema ?? ['verdict', 'reasons'],
+        rubric: step.rubric,
       });
       if (!prompt.ok) {
         stepResults.push(stepResult(idx, step, 'failed', Date.now()));
@@ -267,6 +277,7 @@ export class WorkflowOrchestrator {
         }
         reviewSummary = parsed.value;
         prior = { kind: 'review_verdict', verdict: parsed.value.verdict };
+        gateIdx = idx;
         stepResults.push(
           stepResult(idx, step, 'succeeded', stepStart, {
             usage,
@@ -284,7 +295,10 @@ export class WorkflowOrchestrator {
         lastSuccessOutput = call.value.content;
         finalOutput = call.value.content;
         prior = { kind: 'success' };
-        if (reviewSummary?.verdict === 'revise') reviseDelivered = true;
+        if (reviewSummary?.verdict === 'revise') {
+          reviseDelivered = true;
+          revisionsDone++;
+        }
         stepResults.push(stepResult(idx, step, 'succeeded', stepStart, { usage, estimatedCost: cost, checks }));
         recorded.add(idx);
         opts.onProgress?.({ step: step.name, status: 'succeeded' });
@@ -297,9 +311,100 @@ export class WorkflowOrchestrator {
         recorded.add(idx);
         opts.onProgress?.({ step: step.name, status: 'failed' });
       }
+    } // end inner for
+
+    // 修订循环判定（ADR-0006 D3）：评审仍打回 + 修订已交付 + 次数未用尽 + 预算/时间允许 → 跳回评审步
+    const loopMore =
+      stopReason === undefined &&
+      gateIdx !== undefined &&
+      reviewSummary?.verdict === 'revise' &&
+      reviseDelivered &&
+      revisionsDone < maxRevisions &&
+      executed + 2 <= maxSteps &&
+      Date.now() < deadline &&
+      !opts.signal.aborted;
+    if (!loopMore || gateIdx === undefined) break;
+    reviseDelivered = false;
+    startIdx = gateIdx;
+    warnings.push(`revision loop: revision ${revisionsDone} delivered but reviewer still requests changes — re-reviewing (revisions used ${revisionsDone}/${maxRevisions})`);
+    } // end outer revision loop
+
+    if (stopReason === undefined && reviewSummary?.verdict === 'revise' && reviseDelivered && maxRevisions > 1 && revisionsDone >= maxRevisions) {
+      warnings.push(`max_revisions=${maxRevisions} reached; delivering the latest revision although the reviewer still requests changes`);
     }
 
-    // 未执行到的步骤补记 skipped，保持步骤清单完整
+    // 升级最后一次修订（ADR-0006 D5）：循环用尽仍 revise 且配置了 escalate_to → 换强模型再修一次（不再重评审）
+    if (
+      stopReason === undefined &&
+      wf.escalate_to &&
+      reviewSummary?.verdict === 'revise' &&
+      reviseDelivered &&
+      lastSuccessOutput !== undefined &&
+      revisionsDone >= maxRevisions &&
+      executed < maxSteps &&
+      Date.now() < deadline &&
+      !opts.signal.aborted
+    ) {
+      const esc = wf.escalate_to;
+      if (!this.adapters.has(esc.provider)) {
+        const pcfg = this.cfg.providers[esc.provider];
+        if (pcfg) {
+          const created = createProvider(esc.provider, pcfg, this.credentials);
+          if (created.ok) this.adapters.set(esc.provider, created.value);
+        }
+      }
+      if (!this.adapters.has(esc.provider)) {
+        warnings.push(`escalation skipped: provider "${esc.provider}" unavailable`);
+      } else {
+        const prompt = renderStepPrompt('revision_template', {
+          original: req.input,
+          previousOutput: lastSuccessOutput,
+          reviewFeedback: reviewSummary,
+          reviewSchemaFields: ['verdict', 'reasons'],
+        });
+        if (prompt.ok) {
+          executed++;
+          const stepStart = Date.now();
+          const promptChars = (prompt.value.system ?? '').length + prompt.value.user.length;
+          const estimate = guard.estimateCostUsd(promptChars, wf.limits.max_output_tokens, esc.provider, esc.model);
+          const reservation = guard.reserve(estimate, esc.provider, esc.model);
+          if (!reservation.ok) {
+            warnings.push(`escalation skipped: ${reservation.error.message}`);
+          } else {
+            const synthetic = { name: 'escalate', provider: esc.provider, model: esc.model } as StepConfig;
+            const timeoutMs = Math.max(1, Math.min(esc.timeout_ms ?? 60_000, deadline - Date.now()));
+            const call = await this.callWithRetry(synthetic, prompt.value, {
+              timeoutMs,
+              retries: wf.limits.max_retries_per_step,
+              signal: opts.signal,
+              maxOutputTokens: wf.limits.max_output_tokens,
+            });
+            if (!call.ok) {
+              guard.release(reservation.value);
+              warnings.push(redactText(`escalated revision failed (${call.error.code}); keeping the previous revision`));
+              stepResults.push({
+                stepId: `${stepResults.length + 1}.escalate`, stepName: 'escalate',
+                providerId: esc.provider, modelId: esc.model, status: 'failed',
+                startedAt: new Date(stepStart).toISOString(), durationMs: Date.now() - stepStart,
+                checks: [], errorCode: call.error.code,
+              });
+            } else {
+              const cost = guard.settle(reservation.value, call.value.usage, esc.provider, esc.model, promptChars, wf.limits.max_output_tokens);
+              lastSuccessOutput = call.value.content;
+              finalOutput = call.value.content;
+              stepResults.push({
+                stepId: `${stepResults.length + 1}.escalate`, stepName: 'escalate',
+                providerId: esc.provider, modelId: esc.model, status: 'succeeded',
+                startedAt: new Date(stepStart).toISOString(), durationMs: Date.now() - stepStart,
+                checks: [], usage: call.value.usage, ...(cost !== undefined ? { estimatedCost: cost } : {}),
+              });
+              warnings.push(`escalated final revision to ${esc.provider}/${esc.model} after ${revisionsDone} revision(s) still failed review`);
+              opts.onProgress?.({ step: 'escalate', status: 'succeeded' });
+            }
+          }
+        }
+      }
+    }
     for (let idx = 0; idx < wf.steps.length; idx++) {
       if (!recorded.has(idx)) {
         const step = wf.steps[idx];
@@ -470,10 +575,36 @@ export class WorkflowOrchestrator {
       }
     }
 
-    // finalOutput = 所有成功输出的拼接对比
-    const finalOutput = outputs.length > 0
+    // 默认 finalOutput = 所有成功输出的拼接对比（评委选优成功时被覆盖）
+    let finalOutput: string | undefined = outputs.length > 0
       ? outputs.map((o) => `[${o.name}/${o.model}]\n${o.content}`).join('\n\n---\n\n')
       : undefined;
+
+    // 置信度（ADR-0006 D2）：成功输出间的确定性一致性信号，零额外调用
+    const confidence = answerAgreement(outputs.map((o) => o.content));
+
+    // 评委自动选优（ADR-0006 D1）：≥2 成功输出且配置了 judge；失败降级为拼接对比
+    let judgeSummary: RunResult['judgeSummary'];
+    if (wf.judge && outputs.length >= 2) {
+      const judged = await this.runJudge(wf, req.input, outputs, {
+        guard,
+        deadline,
+        signal: opts.signal,
+        maxOutputTokens: wf.limits.max_output_tokens,
+        maxRetries: wf.limits.max_retries_per_step,
+      });
+      if (judged.ok) {
+        judgeSummary = judged.value.summary;
+        finalOutput = judged.value.winnerContent;
+        stepResults.push(judged.value.step);
+        warnings.push(`judge selected "${judged.value.summary.winnerStep}": ${judged.value.summary.reason.slice(0, 160)}`);
+      } else {
+        warnings.push(judged.error.warning);
+        if (judged.error.step) stepResults.push(judged.error.step);
+      }
+    } else if (wf.judge) {
+      warnings.push(`judge skipped: need >= 2 successful outputs (got ${outputs.length})`);
+    }
 
     const succeededCount = outputs.length;
     const status: RunStatus = succeededCount > 0 ? 'succeeded' : 'failed';
@@ -482,7 +613,11 @@ export class WorkflowOrchestrator {
 
     if (guard.reserved > 0) warnings.push(`unreleased budget reservation: $${guard.reserved.toFixed(6)}`);
 
-    const result: RunResult = { runId, status, finalOutput, steps: stepResults, stopReason, warnings };
+    const result: RunResult = {
+      runId, status, finalOutput, steps: stepResults, stopReason, warnings,
+      ...(confidence !== undefined ? { confidence } : {}),
+      ...(judgeSummary !== undefined ? { judgeSummary } : {}),
+    };
 
     if (opts.journal?.enabled) {
       const jr = opts.journal.append({
@@ -494,6 +629,90 @@ export class WorkflowOrchestrator {
       if (!jr.ok) warnings.push(jr.error);
     }
     return { ok: true, value: result };
+  }
+
+  /**
+   * 评委调用（ADR-0006 D1）：完整预算流程 + 独立 StepResult；
+   * 任何失败都以 err 返回（warning + 可选失败步骤记录），由调用方降级。
+   */
+  private async runJudge(
+    wf: WorkflowConfig,
+    original: string,
+    outputs: Array<{ name: string; model: string; content: string }>,
+    o: { guard: BudgetGuard; deadline: number; signal: AbortSignal; maxOutputTokens: number; maxRetries: number },
+  ): Promise<Result<
+    { summary: NonNullable<RunResult['judgeSummary']>; step: StepResult; winnerContent: string },
+    { warning: string; step?: StepResult }
+  >> {
+    const judge = wf.judge;
+    if (!judge) return err({ warning: 'judge not configured' });
+    if (!this.adapters.has(judge.provider)) {
+      const pcfg = this.cfg.providers[judge.provider];
+      if (!pcfg) return err({ warning: `judge provider "${judge.provider}" missing from config; falling back to concatenated comparison` });
+      const created = createProvider(judge.provider, pcfg, this.credentials);
+      if (!created.ok) return err({ warning: `judge adapter unavailable: ${created.error.message}` });
+      this.adapters.set(judge.provider, created.value);
+    }
+    const mode = (() => {
+      const p = this.cfg.providers[judge.provider];
+      return p && p.kind !== 'mock' ? p.mode : ('byok' as AccessMode);
+    })();
+
+    const prompt = judgePrompt({ original, candidates: outputs });
+    const promptChars = (prompt.system ?? '').length + prompt.user.length;
+    const estimate = o.guard.estimateCostUsd(promptChars, o.maxOutputTokens, judge.provider, judge.model);
+    const reservation = o.guard.reserve(estimate, judge.provider, judge.model);
+    if (!reservation.ok) return err({ warning: `judge skipped: ${reservation.error.message}` });
+
+    const synthetic = { name: 'judge', provider: judge.provider, model: judge.model } as StepConfig;
+    const stepStart = Date.now();
+    const timeoutMs = Math.max(1, Math.min(judge.timeout_ms ?? 60_000, o.deadline - Date.now()));
+    const call = await this.callWithRetry(synthetic, prompt, {
+      timeoutMs,
+      retries: o.maxRetries,
+      signal: o.signal,
+      maxOutputTokens: o.maxOutputTokens,
+    });
+    const failedStep = (detail: string, errorCode?: ProviderErrorCode): StepResult => ({
+      stepId: 'judge',
+      stepName: 'judge',
+      providerId: judge.provider,
+      modelId: judge.model,
+      mode,
+      status: 'failed',
+      startedAt: new Date(stepStart).toISOString(),
+      durationMs: Date.now() - stepStart,
+      checks: [{ checkId: 'judge_selection', passed: false, detail }],
+      ...(errorCode !== undefined ? { errorCode } : {}),
+    });
+    if (!call.ok) {
+      o.guard.release(reservation.value);
+      return err({ warning: `judge call failed (${call.error.code}); falling back to concatenated comparison`, step: failedStep(`call failed: ${call.error.code}`, call.error.code) });
+    }
+    const cost = o.guard.settle(reservation.value, call.value.usage, judge.provider, judge.model, promptChars, o.maxOutputTokens);
+    const parsed = parseJudgeVerdict(call.value.content, outputs.map((x) => x.name));
+    if (!parsed.ok) {
+      return err({ warning: `judge output rejected (${parsed.error.code}); falling back to concatenated comparison`, step: failedStep(parsed.error.message) });
+    }
+    const winner = outputs.find((x) => x.name === parsed.value.winner)!;
+    const step: StepResult = {
+      stepId: 'judge',
+      stepName: 'judge',
+      providerId: judge.provider,
+      modelId: judge.model,
+      mode,
+      status: 'succeeded',
+      startedAt: new Date(stepStart).toISOString(),
+      durationMs: Date.now() - stepStart,
+      checks: [{ checkId: 'judge_selection', passed: true, detail: `winner=${winner.name}` }],
+      usage: call.value.usage,
+      ...(cost !== undefined ? { estimatedCost: cost } : {}),
+    };
+    return ok({
+      summary: { winnerStep: winner.name, providerId: judge.provider, modelId: judge.model, reason: parsed.value.reason },
+      step,
+      winnerContent: winner.content,
+    });
   }
 
   /** 估算整个工作流的最坏情况费用（P2-④ 人工批准用） */
