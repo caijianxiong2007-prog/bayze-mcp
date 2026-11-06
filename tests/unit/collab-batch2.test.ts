@@ -145,6 +145,70 @@ test('moa schema：缺 aggregate 拒绝；moa+judge 拒绝；parallel+aggregate 
 
 // ────────────────────────── 引擎 ──────────────────────────
 
+test('moa：aggregate.evaluate max_chars 拦下超长成品 → 降级拼接对比（Cherry 测试②标定的缺口）', async () => {
+  const c = moaCfg({ aggregate: { provider: 'm', model: 'mock-review-accept', evaluate: ['non_empty', { max_chars: 10 }] } });
+  const long = '这是一段远超十个字限制的聚合成品输出，用于验证成品字数检查会拦截它。';
+  const adapters = new Map<string, ProviderAdapter>([
+    ['m', new (class implements ProviderAdapter {
+      readonly kind = 'mock' as const;
+      constructor(readonly providerId: string) {}
+      capabilities() { return { streaming: false, json: false, tools: false, vision: false }; }
+      async chat(req: ProviderChatRequest): Promise<Result<ProviderChatResponse, ProviderError>> {
+        if ((req.system ?? '').includes('synthesis writer')) {
+          return { ok: true, value: { content: long, usage: { inputTokens: 5, outputTokens: 5 } } };
+        }
+        const mock = new MockProvider('m');
+        return mock.chat({ ...req, modelId: req.modelId === 'mock-review-accept' ? 'mock-success' : req.modelId });
+      }
+    })('m')],
+  ]);
+  const orch = new WorkflowOrchestrator(c, adapters);
+  const r = await orch.run({ workflowId: 'syn', input: '任务' }, { signal: new AbortController().signal });
+  assert.ok(r.ok);
+  if (r.ok) {
+    const res = r.value;
+    assert.equal(res.status, 'succeeded', '降级不推翻运行');
+    assert.ok(res.finalOutput?.includes('---'), '降级为拼接对比');
+    const aggStep = res.steps.find((s) => s.stepName === 'aggregate');
+    assert.equal(aggStep?.status, 'failed');
+    assert.ok(aggStep?.checks.some((ck) => ck.checkId === 'max_chars' && !ck.passed), '失败详情应含 max_chars');
+    assert.ok(res.warnings.some((w) => w.includes('aggregate output rejected')));
+  }
+});
+
+test('moa schema：judge 不允许 evaluate（judge 输出是引擎解析的 JSON）', () => {
+  assert.throws(() => moaCfg({ judge: { provider: 'm', model: 'mock-success', evaluate: ['non_empty'] } }), /not valid on judge/);
+});
+
+test('moa：per-run maxChars 收紧同样作用于聚合成品', async () => {
+  const c = moaCfg({ aggregate: { provider: 'm', model: 'mock-review-accept', evaluate: [{ max_chars: 10000 }] } });
+  const medium = '这段聚合成品有二十个字左右长度。'; // 16 字 < 10000 但 > 收紧后的 10
+  const adapters = new Map<string, ProviderAdapter>([
+    ['m', new (class implements ProviderAdapter {
+      readonly kind = 'mock' as const;
+      constructor(readonly providerId: string) {}
+      capabilities() { return { streaming: false, json: false, tools: false, vision: false }; }
+      async chat(req: ProviderChatRequest): Promise<Result<ProviderChatResponse, ProviderError>> {
+        if ((req.system ?? '').includes('synthesis writer')) {
+          return { ok: true, value: { content: medium, usage: { inputTokens: 5, outputTokens: 5 } } };
+        }
+        const mock = new MockProvider('m');
+        return mock.chat({ ...req, modelId: req.modelId === 'mock-review-accept' ? 'mock-success' : req.modelId });
+      }
+    })('m')],
+  ]);
+  const orch = new WorkflowOrchestrator(c, adapters);
+  const r = await orch.run(
+    { workflowId: 'syn', input: 'x', userOverrides: { maxChars: 10 } },
+    { signal: new AbortController().signal },
+  );
+  assert.ok(r.ok);
+  if (r.ok) {
+    const aggStep = r.value.steps.find((s) => s.stepName === 'aggregate');
+    assert.equal(aggStep?.status, 'failed', '收紧后聚合成品应被拦');
+  }
+});
+
 test('moa：聚合成功 → finalOutput=合成文本，aggregate 步骤透明记录，agreement 报告', async () => {
   const c = moaCfg();
   const adapters = new Map<string, ProviderAdapter>([

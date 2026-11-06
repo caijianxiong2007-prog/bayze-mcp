@@ -117,7 +117,10 @@ compare_judged:
 # MoA 聚合示例：多模型各写一版 → 强模型合成最优答案
 synthesize:
   strategy: moa
-  aggregate: { provider: anthropic, model: claude-sonnet-4-5 }   # 必配：合成模型
+  aggregate:
+    provider: anthropic
+    model: claude-sonnet-4-5        # 必配：合成模型
+    evaluate: [non_empty, { max_chars: 400 }]   # 可选：成品确定性检查（聚合倾向写长，建议设上限）
   limits: { max_steps: 3, total_timeout_ms: 180000, max_output_tokens: 8000 }
   steps:
     - { name: deepseek, provider: deepseek, model: deepseek-chat, input: original, timeout_ms: 60000, evaluate: [non_empty] }

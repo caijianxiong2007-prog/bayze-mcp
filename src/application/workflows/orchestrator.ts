@@ -391,16 +391,29 @@ export class WorkflowOrchestrator {
               });
             } else {
               const cost = guard.settle(reservation.value, call.value.usage, esc.provider, esc.model, promptChars, wf.limits.max_output_tokens);
-              lastSuccessOutput = call.value.content;
-              finalOutput = call.value.content;
+              // 成品确定性检查（0.12.2）：escalate_to.evaluate（缺省 non_empty）+ per-run maxChars 收紧
+              const escBase = esc.evaluate ?? ['non_empty' as const];
+              const escChecksSpec = maxChars === undefined
+                ? escBase
+                : escBase.map((c) => (typeof c === 'object' && 'max_chars' in c ? { max_chars: Math.min(c.max_chars, maxChars) } : c));
+              const escChecks = runDeterministicChecks(call.value.content, escChecksSpec);
+              const escPassed = escChecks.every((c) => c.passed);
+              if (escPassed) {
+                lastSuccessOutput = call.value.content;
+                finalOutput = call.value.content;
+              } else {
+                warnings.push('escalated revision rejected by deterministic checks; keeping the previous revision');
+              }
               stepResults.push({
                 stepId: `${stepResults.length + 1}.escalate`, stepName: 'escalate',
-                providerId: esc.provider, modelId: esc.model, status: 'succeeded',
+                providerId: esc.provider, modelId: esc.model, status: escPassed ? 'succeeded' : 'failed',
                 startedAt: new Date(stepStart).toISOString(), durationMs: Date.now() - stepStart,
-                checks: [], usage: call.value.usage, ...(cost !== undefined ? { estimatedCost: cost } : {}),
+                checks: escChecks, usage: call.value.usage, ...(cost !== undefined ? { estimatedCost: cost } : {}),
               });
-              warnings.push(`escalated final revision to ${esc.provider}/${esc.model} after ${revisionsDone} revision(s) still failed review`);
-              opts.onProgress?.({ step: 'escalate', status: 'succeeded' });
+              if (escPassed) {
+                warnings.push(`escalated final revision to ${esc.provider}/${esc.model} after ${revisionsDone} revision(s) still failed review`);
+              }
+              opts.onProgress?.({ step: 'escalate', status: escPassed ? 'succeeded' : 'failed' });
             }
           }
         }
@@ -626,6 +639,7 @@ export class WorkflowOrchestrator {
         signal: opts.signal,
         maxOutputTokens: wf.limits.max_output_tokens,
         maxRetries: wf.limits.max_retries_per_step,
+        maxChars,
       });
       if (agg.ok) {
         finalOutput = agg.value.content;
@@ -748,14 +762,16 @@ export class WorkflowOrchestrator {
   }
 
   /**
-   * MoA 聚合调用（ADR-0006 D6）：完整预算流程 + 独立 StepResult；
-   * 聚合输出为自由文本，仅做 non_empty 确定性检查；任何失败都以 err 返回，由调用方降级。
+   * MoA 聚合调用（ADR-0006 D6）：完整预算流程 + 独立 StepResult。
+   * 聚合输出为自由文本，除 non_empty 外还执行 aggregate.evaluate 确定性检查
+   * （0.12.2：成品此前无字数检查——「重写型步骤天然写长」的结构性缺口）；
+   * 任何失败都以 err 返回，由调用方降级。
    */
   private async runAggregator(
     wf: WorkflowConfig,
     original: string,
     outputs: Array<{ name: string; model: string; content: string }>,
-    o: { guard: BudgetGuard; deadline: number; signal: AbortSignal; maxOutputTokens: number; maxRetries: number },
+    o: { guard: BudgetGuard; deadline: number; signal: AbortSignal; maxOutputTokens: number; maxRetries: number; maxChars?: number },
   ): Promise<Result<{ content: string; step: StepResult }, { warning: string; step?: StepResult }>> {
     const agg = wf.aggregate;
     if (!agg) return err({ warning: 'aggregate not configured' });
@@ -803,9 +819,22 @@ export class WorkflowOrchestrator {
       return err({ warning: `aggregate call failed (${call.error.code}); falling back to concatenated comparison`, step: failedStep(`call failed: ${call.error.code}`, call.error.code) });
     }
     const cost = o.guard.settle(reservation.value, call.value.usage, agg.provider, agg.model, promptChars, o.maxOutputTokens);
-    const checks = runDeterministicChecks(call.value.content, ['non_empty']);
+    // 成品确定性检查（0.12.2）：aggregate.evaluate（缺省 non_empty）+ per-run maxChars 收紧
+    const baseChecks = agg.evaluate ?? ['non_empty' as const];
+    const tightened = o.maxChars === undefined
+      ? baseChecks
+      : baseChecks.map((c) => (typeof c === 'object' && 'max_chars' in c ? { max_chars: Math.min(c.max_chars, o.maxChars!) } : c));
+    const checks = runDeterministicChecks(call.value.content, tightened);
     if (!checks.every((c) => c.passed)) {
-      return err({ warning: 'aggregate output rejected (non_empty); falling back to concatenated comparison', step: failedStep('aggregate output is empty') });
+      const failed = checks.find((c) => !c.passed);
+      const failedChecksStep: StepResult = {
+        ...failedStep(`${failed?.checkId ?? 'check'} failed: ${failed?.detail ?? ''}`),
+        checks,
+      };
+      return err({
+        warning: `aggregate output rejected (${failed?.checkId ?? 'check'}: ${failed?.detail ?? ''}); falling back to concatenated comparison`,
+        step: failedChecksStep,
+      });
     }
     const step: StepResult = {
       stepId: 'aggregate',

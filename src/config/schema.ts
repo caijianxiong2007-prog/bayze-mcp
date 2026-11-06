@@ -140,12 +140,14 @@ const taskProfile = z
   })
   .strict();
 
-/** 引擎生成的跨步骤模型目标（ADR-0006）：judge（parallel 评委）/ escalate_to（waterfall 升级） */
+/** 引擎生成的跨步骤模型目标（ADR-0006）：judge（parallel 评委）/ aggregate（moa 聚合）/ escalate_to（waterfall 升级） */
 const modelTarget = z
   .object({
     provider: z.string().min(1),
     model: modelId,
     timeout_ms: z.number().int().positive().optional(),
+    /** 输出确定性检查（0.12.2）：aggregate/escalate_to 的成品检查（缺省 [non_empty]）；judge 输出为引擎解析的 JSON，不适用 */
+    evaluate: z.array(checkSpec).optional(),
   })
   .strict();
 
@@ -181,6 +183,9 @@ const workflowSchema = z
       // parallel / moa：并发执行，无 run_if 与 gate
       if (wf.escalate_to !== undefined) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['escalate_to'], message: 'escalate_to is only valid for strategy: waterfall' });
+      }
+      if (wf.judge?.evaluate !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge', 'evaluate'], message: 'evaluate is not valid on judge (judge output is engine-parsed JSON); use it on aggregate' });
       }
       if (wf.strategy === 'parallel' && wf.aggregate !== undefined) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['aggregate'], message: 'aggregate is only valid for strategy: moa (use judge for selection)' });
