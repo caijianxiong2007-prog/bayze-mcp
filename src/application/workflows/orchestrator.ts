@@ -879,8 +879,8 @@ export class WorkflowOrchestrator {
 
     // ① 开场：双方独立作答（并行；不预设立场，分歧自然涌现）
     const openings = await Promise.all([
-      speak(a, debateOpeningPrompt(req.input), '1.opening'),
-      speak(b, debateOpeningPrompt(req.input), '2.opening'),
+      speak(a, debateOpeningPrompt(req.input, wf.stances?.[0]), '1.opening'),
+      speak(b, debateOpeningPrompt(req.input, wf.stances?.[1]), '2.opening'),
     ]);
     let posA = openings[0]?.ok ? openings[0].content : '';
     let posB = openings[1]?.ok ? openings[1].content : '';
@@ -894,8 +894,8 @@ export class WorkflowOrchestrator {
         break;
       }
       if (Date.now() >= deadline || opts.signal.aborted) break;
-      const promptA = debateRebuttalPrompt({ original: req.input, own: posA, opponent: posB, round: r });
-      const promptB = debateRebuttalPrompt({ original: req.input, own: posB, opponent: posA, round: r });
+      const promptA = debateRebuttalPrompt({ original: req.input, own: posA, opponent: posB, round: r, stance: wf.stances?.[0] });
+      const promptB = debateRebuttalPrompt({ original: req.input, own: posB, opponent: posA, round: r, stance: wf.stances?.[1] });
       const res = await Promise.all([
         posA ? speak(a, promptA, `${2 * r + 1}.${a.name}-r${r}`) : Promise.resolve({ ok: false, content: '' }),
         posB ? speak(b, promptB, `${2 * r + 2}.${b.name}-r${r}`) : Promise.resolve({ ok: false, content: '' }),
@@ -963,6 +963,9 @@ export class WorkflowOrchestrator {
         if (checks.every((c) => c.passed)) {
           finalOutput = call.value.content;
           warnings.push(`debate: ${exchanges.length} exchange(s) across ${rounds} round(s); arbiter verdict delivered`);
+          if (!/[。！？.!?!\]）"']$/.test(call.value.content.trim())) {
+            warnings.push('arbiter verdict may be truncated by the token cap (does not end with terminal punctuation) — treat the tail as incomplete');
+          }
           stepResults.push(arbStep);
         } else {
           const failed = checks.find((c) => !c.passed);
@@ -1013,6 +1016,9 @@ export class WorkflowOrchestrator {
                   finalOutput = retry.value.content;
                   arbStep.status = 'failed';
                   warnings.push(`arbiter first attempt over max_chars (${call.value.content.length} > ${gate}); compress-retry delivered (${retry.value.content.length} chars)`);
+                  if (!/[。！？.!?!\]）"']$/.test(retry.value.content.trim())) {
+                    warnings.push('arbiter verdict may be truncated by the token cap (does not end with terminal punctuation) — treat the tail as incomplete');
+                  }
                 } else {
                   arbStep.status = 'failed';
                   retryStep.status = 'failed';

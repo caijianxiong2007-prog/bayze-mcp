@@ -100,10 +100,15 @@ export function aggregatorPrompt(ctx: { original: string; candidates: JudgeCandi
   return { system, user };
 }
 
-/** debate 开场提示（ADR-0006 D7）：只写己方立场——防「单方开场=整场迷你辩论」的退化 */
-export function debateOpeningPrompt(task: string): StepPrompt {
+/** debate 开场提示（ADR-0006 D7/D8）：只写己方立场——防「单方开场=整场迷你辩论」的退化；
+ * stance 指派防是非题同向退化（按指派立场尽力论证，但保持事实诚实） */
+export function debateOpeningPrompt(task: string, stance?: string): StepPrompt {
+  const stanceLine = stance
+    ? `Your ASSIGNED position: "${stance}". Argue for it as strongly as you honestly can — commit to the stance, but never fabricate evidence for it.`
+    : '';
   const system = [
     'You are ONE side of a structured two-model debate.',
+    ...(stance ? [stanceLine] : []),
     'State YOUR opening position and your key arguments for the task — nothing else.',
     'Do NOT simulate the other side, rebuttals, or a verdict: those happen in later rounds run by the engine.',
     'Respect any length limit stated in the task.',
@@ -113,9 +118,10 @@ export function debateOpeningPrompt(task: string): StepPrompt {
 }
 
 /** debate 反驳提示（ADR-0006 D7）：看到对方立场后攻击/修正/让步，输出更新后的立场 */
-export function debateRebuttalPrompt(ctx: { original: string; own: string; opponent: string; round: number }): StepPrompt {
+export function debateRebuttalPrompt(ctx: { original: string; own: string; opponent: string; round: number; stance?: string }): StepPrompt {
   const system = [
     `You are debater in round ${ctx.round} of a structured two-model debate.`,
+    ...(ctx.stance ? [`Your ASSIGNED position: "${ctx.stance}". Defend it honestly — concede what is clearly right, but do not abandon the stance without evidence.`] : []),
     'The opposing model has stated a position on the same task. Read it carefully.',
     'Critique its weakest points with concrete evidence, defend or correct your own position where it was wrong, and concede points that are clearly right.',
     'Do not soften disagreements — the value of this debate is honest clash, not consensus for its own sake.',

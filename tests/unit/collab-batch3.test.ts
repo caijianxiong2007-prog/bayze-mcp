@@ -278,3 +278,44 @@ test('debate 0.13.3：裁决超闸 → 自校准压缩重试成功交付（不�
     assert.ok(res.warnings.some((w) => w.includes('compress-retry delivered')));
   }
 });
+
+test('debate 0.14.0：stances 立场注入各自开场/反驳；非 debate 拒绝（治三次同向退化）', async () => {
+  // waterfall + stances 拒绝
+  assert.throws(() =>
+    configSchema.parse({
+      version: 1,
+      providers: debateProviders(),
+      workflows: {
+        w: {
+          strategy: 'waterfall',
+          stances: ['支持', '反对'],
+          limits: { max_steps: 2, total_timeout_ms: 5000, max_output_tokens: 100 },
+          steps: [{ name: 'a', provider: 'm', model: 'mock-success', input: 'original', timeout_ms: 1000 }],
+        },
+      },
+    }), /stances is only valid/);
+
+  const c = debateCfg({ stances: ['应当迁移', '不应当迁移'] });
+  const seen: string[] = [];
+  class Probe implements ProviderAdapter {
+    readonly kind = 'mock' as const;
+    constructor(readonly providerId: string) {}
+    capabilities() { return { streaming: false, json: false, tools: false, vision: false }; }
+    async chat(req: ProviderChatRequest): Promise<Result<ProviderChatResponse, ProviderError>> {
+      seen.push((req.system ?? '') + '\u0000' + req.user);
+      const mock = new MockProvider('m');
+      return mock.chat({ ...req, modelId: req.modelId === 'mock-review-accept' ? 'mock-success' : req.modelId });
+    }
+  }
+  const orch = new WorkflowOrchestrator(c, new Map<string, ProviderAdapter>([['m', new Probe('m')]]));
+  const r = await orch.run({ workflowId: 'debate', input: '评估迁移' }, { signal: new AbortController().signal });
+  assert.ok(r.ok);
+  const systems = seen.map((x) => x.split('\u0000')[0]);
+  const openA = systems.find((x) => x!.includes('应当迁移') && x!.includes('ONE side'));
+  const openB = systems.find((x) => x!.includes('不应当迁移') && x!.includes('ONE side'));
+  assert.ok(openA, 'A 方开场应注入「应当迁移」');
+  assert.ok(openB, 'B 方开场应注入「不应当迁移」');
+  const rebutA = systems.find((x) => x!.includes('应当迁移') && x!.includes('round 1'));
+  assert.ok(rebutA, 'A 方反驳应保持立场');
+  assert.ok(openA!.includes('never fabricate'), '立场注入应要求事实诚实');
+});

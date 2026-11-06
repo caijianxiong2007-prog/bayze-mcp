@@ -80,6 +80,15 @@ Bayze 已有两种协作策略：waterfall（草稿→结构化评审→按需�
   审批预估按 (rounds+1)× 双方 + 裁决放大。
 - 适用：分析/决策/风险评估类任务；创意与约束型任务不适用（用 judged/moa/waterfall）。
 
+
+### D8：debate 立场指派（0.14.0 增补，来自 dogfood 三次同向退化）
+
+- 五次实测中三次双方站同一边（含用户显式分派正反方也无效——两个步骤同一份 input，
+  立场注入无入口）：「立场自然涌现」在是非题上不可靠，模型会锚定同一结论。
+- 修复：workflow 可选 `stances: [string, string]`（仅 debate）——两个开场/反驳 prompt 分别
+  注入己方指派立场：「按指派立场尽力论证，同时保持事实诚实」。
+- 不配置 stances 时保持涌现行为（开放分析题常自然分歧，四测中 deepseek/qwen 曾真交锋）。
+
 ## 后果
 
 - schema 校验：judge 仅 parallel、escalate_to 仅 waterfall、rubric 仅 gate 步骤、跨引用校验 provider/model 存在。

@@ -134,6 +134,7 @@ weigh_options:
     model: claude-sonnet-4-5
     evaluate: [non_empty, { max_chars: 600 }]   # 裁决成品确定性检查
   rounds: 1
+  stances: ["支持：应当执行任务提议的方案", "反对：不应当执行"]   # 可选：是非题防双方同向（D8）
   limits: { max_steps: 8, total_timeout_ms: 300000, max_output_tokens: 2000 }
   steps:
     - { name: deepseek, provider: deepseek, model: deepseek-chat, input: original, timeout_ms: 60000, evaluate: [non_empty] }

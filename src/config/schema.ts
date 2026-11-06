@@ -169,6 +169,8 @@ const workflowSchema = z
     escalate_to: modelTarget.optional(),
     /** debate 反驳轮数（ADR-0006 D7，仅 debate）：默认 1，上限 3 */
     rounds: z.number().int().min(0).max(3).optional().default(1),
+    /** debate 立场指派（ADR-0006 D8，仅 debate）：是非题防同向退化；缺省=立场涌现 */
+    stances: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
     limits: limitsSchema,
     steps: z.array(stepSchema).min(1, 'workflow needs at least one step'),
   })
@@ -183,6 +185,9 @@ const workflowSchema = z
       }
       if (wf.rounds !== undefined && wf.rounds !== 1) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['rounds'], message: 'rounds is only valid for strategy: debate' });
+      }
+      if (wf.stances !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stances'], message: 'stances is only valid for strategy: debate' });
       }
       wf.steps.forEach((step, i) => {
         if (step.rubric !== undefined && step.gate === undefined) {
@@ -217,6 +222,9 @@ const workflowSchema = z
       }
       if (wf.rounds !== undefined && wf.rounds !== 1) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['rounds'], message: 'rounds is only valid for strategy: debate' });
+      }
+      if (wf.stances !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stances'], message: 'stances is only valid for strategy: debate' });
       }
       if (wf.strategy === 'parallel' && wf.judge?.evaluate !== undefined) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['judge', 'evaluate'], message: 'evaluate is not valid on a parallel judge (selection output is engine-parsed JSON); it is valid for a debate arbiter' });
