@@ -28,6 +28,7 @@ export type ProviderErrorCode =
   | 'invalid_request'
   | 'provider_unavailable'
   | 'content_blocked'
+  | 'insufficient_balance'
   | 'unknown';
 
 /** 升级触发原因；确定性检查采用 `check_failed:<check_id>` 结构化形式（基线 §12） */

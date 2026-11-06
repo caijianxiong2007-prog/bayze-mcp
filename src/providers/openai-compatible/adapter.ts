@@ -4,7 +4,7 @@ import type { Usage } from '../../domain/types.js';
 import { redactProviderErrorBody } from '../../logging/redact.js';
 import type { CredentialStore } from '../../credentials/store.js';
 import type { RemoteProviderConfig } from '../../config/schema.js';
-import { BAYZE_API_CONSOLE_URL } from '../../config/schema.js';
+import { BAYZE_API_CONSOLE_URL, BAYZE_API_BILLING_URL } from '../../config/schema.js';
 import { endpointUrl, postJson } from '../common/http.js';
 import type { AdapterCapabilities, ProviderAdapter, ProviderChatRequest, ProviderChatResponse, ProviderError } from '../types.js';
 
@@ -64,9 +64,12 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       return ok({ content, usage, providerModelId });
     }
     const mapped = mapProviderStatus(status, body, res.value.headers);
-    // Bayze API 模式：鉴权失败时附注册入口（1,200 免费积分），缩短「拿到 401 → 弃用」的断点
-    if (mapped.code === 'auth' && this.cfg.mode === 'bayze_api') {
+    // Bayze API 模式：鉴权/余额失败时附平台入口，缩短「拿到错误 → 弃用」的断点
+    if (this.cfg.mode === 'bayze_api' && mapped.code === 'auth') {
       mapped.message += ` | Get a key at ${BAYZE_API_CONSOLE_URL} (1,200 free points on signup)`;
+    }
+    if (this.cfg.mode === 'bayze_api' && mapped.code === 'insufficient_balance') {
+      mapped.message += ` | Top up at ${BAYZE_API_BILLING_URL}`;
     }
     return err(mapped);
   }
@@ -77,6 +80,10 @@ export function mapProviderStatus(status: number, body: unknown, headers: Header
   const retryAfterMs = parseRetryAfterMs(headers);
   if (status === 401 || status === 403) {
     return { code: 'auth', message: `status ${status}: ${errText}`, retryable: false };
+  }
+  // 402 Payment Required：余额/配额不足（Bayze API 平台实测口径，2026-11-06）
+  if (status === 402) {
+    return { code: 'insufficient_balance', message: `status 402: ${errText}`, retryable: false };
   }
   if (status === 429) {
     return retryAfterMs !== undefined

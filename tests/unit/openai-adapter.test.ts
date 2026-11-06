@@ -115,8 +115,7 @@ test('openai：401 → auth 不可重试，错误体脱敏', async () => {
   );
 });
 
-test('openai：bayze_api 模式 401 → 错误信息附注册入口（转化断点修复）', async () => {
-  const cfg = {
+test('openai：bayze_api 模式 401 → 错误信息附注册入口（转化断点修复）', async () => {  const cfg = {
     kind: 'openai-compatible',
     base_url: 'https://app.lanwealth.com/v1',
     mode: 'bayze_api',
@@ -312,4 +311,47 @@ test('openai：凭证环境变量缺失 → auth 结构化错误', async () => {
   } finally {
     if (saved !== undefined) process.env[FAKE_ENV] = saved;
   }
+});
+
+test('openai：402 → insufficient_balance 不可重试（byok 不附充值链接）', async () => {
+  await withServer(
+    (_rq, res) => {
+      res.writeHead(402, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: '点数不足以完成本次请求(预计需要 5 点,当前可用 2 点)。请充值后重试。', type: 'insufficient_quota' } }));
+    },
+    async (url) => {
+      const r = await adapterFor(url).chat(req());
+      assert.ok(!r.ok);
+      if (!r.ok) {
+        assert.equal(r.error.code, 'insufficient_balance');
+        assert.equal(r.error.retryable, false);
+        assert.ok(!r.error.message.includes('lanwealth'), 'byok 模式不附加平台链接');
+      }
+    },
+  );
+});
+
+test('openai：bayze_api 模式 402 → 错误信息附充值直链（余额不足转化触点）', async () => {
+  await withServer(
+    (_rq, res) => {
+      res.writeHead(402, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Your organization credit pool is empty.', type: 'insufficient_quota' } }));
+    },
+    async (url) => {
+      const cfg = {
+        kind: 'openai-compatible',
+        base_url: url,
+        mode: 'bayze_api',
+        api_key_ref: `env:${FAKE_ENV}`,
+        allow_insecure_base_url: true,
+        models: [{ id: 'm1' }],
+      } as unknown as RemoteProviderConfig;
+      const r = await new OpenAICompatibleAdapter('bayze', cfg, new CredentialStore()).chat(req());
+      assert.ok(!r.ok);
+      if (!r.ok) {
+        assert.equal(r.error.code, 'insufficient_balance');
+        assert.ok(r.error.message.includes('https://app.lanwealth.com/dashboard/billing'), '错误必须带充值直链');
+      }
+    },
+  );
 });

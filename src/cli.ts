@@ -30,6 +30,8 @@ commands:
   eval --workflow <id> --tasks <path>         run evaluation tasks through a workflow
        [--compare <id>] [--config <path>]
        [--no-journal]
+  models                                      list Bayze API models (needs BAYZE_API_KEY)
+  balance [--config <path>]                   query Bayze API points balance
 
 run options:
   --config <path>     config file (default: OS user config dir)
@@ -76,6 +78,8 @@ async function main(argv: string[]): Promise<number> {
       return evalCmd(rest);
     case 'models':
       return modelsCmd(rest);
+    case 'balance':
+      return balanceCmd(rest);
     case 'serve':
       return serveCmd(rest);
     case 'export':
@@ -310,6 +314,35 @@ async function modelsCmd(args: string[]): Promise<number> {
     process.stderr.write(`Error: ${(e as Error).message}\n`);
     return 1;
   }
+}
+
+/** 查询 Bayze API 点数余额（P1 商业闭环；端点未上线时降级到控制台指引） */
+async function balanceCmd(args: string[]): Promise<number> {
+  let configPath: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--config') { configPath = args[++i]; }
+    else return fail(`unknown option: ${args[i]}`, 2);
+  }
+  const loaded = loadConfig(configPath ?? defaultConfigPath());
+  if (!loaded.ok) return fail(formatConfigError(loaded.error), 1);
+
+  // 从配置中找 bayze_api 供应商，密钥沿用其 api_key_ref（不硬编码环境变量名）
+  const entry = Object.entries(loaded.value.providers).find(([, p]) => p.mode === 'bayze_api');
+  if (!entry) {
+    return fail('no provider with mode: bayze_api in config — balance applies to the Bayze unified API mode only', 1);
+  }
+  const [, provider] = entry;
+  const keyRef = (provider as { api_key_ref: string }).api_key_ref;
+  const key = new CredentialStore().resolve(keyRef);
+  if (!key.ok) {
+    return fail(`cannot resolve ${keyRef}: ${key.error.message}\nCreate a key (lw-…) at the console, then export it.`, 1);
+  }
+
+  const { fetchBayzeBalance, formatBalanceLines } = await import('./application/balance.js');
+  const result = await fetchBayzeBalance(key.value);
+  const lines = formatBalanceLines(result, keyRef);
+  process.stdout.write(`${lines.join('\n')}\n`);
+  return result.ok ? 0 : 1;
 }
 
 /** 启动 localhost OpenAI 兼容 API（P1 / ADR-0004） */

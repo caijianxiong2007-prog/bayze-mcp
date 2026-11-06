@@ -52,6 +52,9 @@ node dist/src/cli.js mcp --config examples/config.example.yaml
 node dist/src/cli.js journal tail 5
 node dist/src/cli.js journal clear
 
+# Bayze API 模式：查点数余额（密钥取自配置中 bayze_api 供应商的引用）
+node dist/src/cli.js balance --config examples/config.bayze.example.yaml
+
 # 查看默认配置路径（OS 用户配置目录；Bayze 只读取，不写入）
 node dist/src/cli.js config path
 ```
@@ -98,7 +101,7 @@ node dist/src/cli.js run --workflow <你的工作流> --config <你的配置> --
 2. 控制台创建 API Key（`lw-` 开头）→ `export BAYZE_API_KEY=lw-xxxx`
 3. 以 [examples/config.bayze.example.yaml](examples/config.bayze.example.yaml) 为起点；`config check` 检测到该模式会打印同样的引导
 
-说明（如实）：此模式下请求经 Bayze 服务端转发至实际供应商（不宣称「只在本机处理」）；充值（支付宝/微信/国际卡）与账单：<https://app.lanwealth.com/dashboard/billing>，按量计费以平台账单为准；模型 id 以平台开放目录为准。BYOK 与此模式可在同一配置中并存、按工作流选用。
+说明（如实）：此模式下请求经 Bayze 服务端转发至实际供应商（不宣称「只在本机处理」）；充值（支付宝/微信/国际卡）与账单：<https://app.lanwealth.com/dashboard/billing>，按量计费以平台账单为准；模型 id 以平台开放目录为准；**余额不足时平台返回 402**，Bayze 将其映射为 `insufficient_balance` 并在错误信息附充值直链。BYOK 与此模式可在同一配置中并存、按工作流选用。
 
 示例配置使用 mock provider 演练全部路径（成功 / 空输出 / 超时 / 限流 / 挂起中止等）；`example-remote` 为假数据的 OpenAI 兼容供应商样例——密钥仅允许 `env:` 引用。真实供应商适配器在阶段 4 交付。
 

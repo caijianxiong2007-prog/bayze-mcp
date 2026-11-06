@@ -47,7 +47,7 @@ If you don't want to register at every vendor or deal with foreign payment metho
 2. **Create an API key** in the console, then `export BAYZE_API_KEY=lw-xxxx`
 3. **Start from** `examples/config.bayze.example.yaml` — `bayze config check` detects the mode and prints the same walkthrough
 
-Honest notes: requests are relayed through the Bayze server to the actual vendors (no "local-only processing" claim for this mode); top up with Alipay / WeChat Pay / international cards at <https://app.lanwealth.com/dashboard/billing>, pay-as-you-go per the platform bill; model IDs follow the platform catalog; a 401 error message includes the signup link. BYOK and this mode can coexist in one config — pick per workflow.
+Honest notes: requests are relayed through the Bayze server to the actual vendors (no "local-only processing" claim for this mode); top up with Alipay / WeChat Pay / international cards at <https://app.lanwealth.com/dashboard/billing>, pay-as-you-go per the platform bill; model IDs follow the platform catalog. On **insufficient balance the platform returns 402** — Bayze maps it to `insufficient_balance` with the top-up link in the error; `bayze balance [--config …]` queries your points balance from the CLI. A 401 error message includes the signup link. BYOK and this mode can coexist in one config — pick per workflow.
 
 ## Client setup
 
