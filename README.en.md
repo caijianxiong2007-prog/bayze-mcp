@@ -49,6 +49,8 @@ All endpoint/model IDs are public shapes marked for verification; **all prices a
   parallel, then a synthesizer model combines them into one final answer (claims consistent across candidates
   win, single-candidate errors drop) — research-backed to often beat the best single model. Fails open to
   concatenated comparison.
+> Note: "five collaboration patterns" refers to strategies (waterfall / parallel / moa / debate / revision-loop), not the number of workflows — example configs ship 10 workflows; multiple workflows can share one strategy.
+
 - **Debate** (`strategy: debate` + required `judge` arbiter + optional `rounds`, default 1): two models open
   independently, rebut each other for K rounds (stance emerges from disagreement), then an arbiter weighs the
   arguments and delivers the final answer (with deterministic checks on the verdict). Falls back to the debate

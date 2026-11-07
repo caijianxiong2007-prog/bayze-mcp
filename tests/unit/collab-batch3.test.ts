@@ -134,6 +134,11 @@ test('debate：开场×2 + 反驳×2 + 裁决 → finalOutput=裁决文本，agr
     assert.equal(rebuttals.length, 2);
     assert.ok(res.agreement !== undefined, '终局立场一致性应报告');
     assert.ok(res.warnings.some((w) => w.includes('arbiter verdict delivered')));
+    // 0.14.2：发言记录审计面——开场×2 + 反驳×2 全部可见
+    assert.ok(res.debateExchanges && res.debateExchanges.length === 4, '应含 4 条发言（开场×2+反驳×2）');
+    const rounds = new Set(res.debateExchanges!.map((e) => e.round));
+    assert.ok(rounds.has('opening') && rounds.has('round 1'), 'round 标记应齐全');
+    assert.ok(res.debateExchanges!.every((e) => typeof e.content === 'string' && e.content.length > 0));
   }
 });
 

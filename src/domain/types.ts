@@ -108,4 +108,7 @@ export interface RunResult {
   judgeSummary?: { winnerStep: string; providerId: string; modelId: string; reason: string };
   /** 评委选优时的全部候选（可核对评委裁决；仅 judge 成功路径填充，避免 parallel 拼接模式重复膨胀） */
   candidates?: Array<{ stepName: string; modelId: string; content: string }>;
+  /** debate 全部发言记录（0.14.2：开场+各轮反驳，round 标记）——审计面补齐，
+   *  发言纪律（字数等）可逐段核对，不再只有裁决孤证 */
+  debateExchanges?: Array<{ name: string; model: string; round: string; content: string }>;
 }

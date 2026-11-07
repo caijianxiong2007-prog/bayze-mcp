@@ -1062,6 +1062,7 @@ export class WorkflowOrchestrator {
     const result: RunResult = {
       runId, status, finalOutput, steps: stepResults, stopReason, warnings,
       ...(agreement !== undefined ? { agreement } : {}),
+      ...(exchanges.length > 0 ? { debateExchanges: exchanges } : {}),
     };
 
     if (opts.journal?.enabled) {
