@@ -238,7 +238,7 @@ test('debate 0.13.2：开场带「只写己方立场」system（防单方开场=
   // 裁决：maxOutputTokens 从 max_chars 800 推导 = ceil(800/1.4)=572，且 < 工作流上限 2000
   const arbiter = seen.find((x) => x.system.includes('impartial arbiter'));
   assert.ok(arbiter, '应有裁决调用');
-  assert.equal(arbiter!.maxOutputTokens, 364, 'token 上限应从字符闸推导（ceil(800/2.2)）');
+  assert.equal(arbiter!.maxOutputTokens, 800, 'token 上限应从字符闸推导（安全下界 1.0：ceil(800/1.0)）');
   // 裁决 system 含「折扣不可验证量化论据」
   assert.ok(arbiter!.system.includes('Discount quantitative claims'), '裁决应折扣编造类论据');
 });

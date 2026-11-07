@@ -172,7 +172,7 @@ test('moa：aggregate.evaluate max_chars 拦下超长成品 → 降级拼接对�
     const aggStep = res.steps.find((s) => s.stepName === 'aggregate');
     assert.equal(aggStep?.status, 'failed');
     assert.ok(aggStep?.checks.some((ck) => ck.checkId === 'max_chars' && !ck.passed), '失败详情应含 max_chars');
-    assert.ok(res.warnings.some((w) => w.includes('aggregate output rejected')));
+    assert.ok(res.warnings.some((w) => w.includes('still over limit') || w.includes('aggregate output rejected')), '降级警告应在（0.14.1 起重试仍超限走新文案）');
     assert.ok(res.candidates && res.candidates.length === 2, 'moa 降级时也应附 candidates（结构化审计面）');
   }
 });

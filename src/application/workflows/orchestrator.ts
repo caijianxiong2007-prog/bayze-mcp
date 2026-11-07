@@ -57,8 +57,10 @@ const RETRY_BACKOFF_CAP_MS = 10_000;
 function tokenCapFor(evaluate: unknown[] | undefined, fallback: number): number {
   const mc = (evaluate ?? []).find((c) => typeof c === 'object' && c !== null && 'max_chars' in c) as { max_chars: number } | undefined;
   if (!mc) return fallback;
-  // 2.2：Claude 中英混合实测最高 ~2.4 字/token（0.13.3 校正；残余偏差由压缩重试兜底）
-  return Math.max(64, Math.min(fallback, Math.ceil(mc.max_chars / 2.2)));
+  // 除数取安全下界 1.0（0.14.1 修复）：实测中文密集输出仅 ~1.05 字/token——按更高比率
+  // 设 token 上限会在字符闸触发前静默硬截断成品（半句交付，实测 114 tokens=119 字断句），
+  // 比超闸被拒更糟。除数 1.0 使字符闸恒先触发，token 上限仅作成本兜底；残余超闸由压缩重试兜底。
+  return Math.max(64, Math.min(fallback, Math.ceil(mc.max_chars / 1.0)));
 }
 
 /** 提取 evaluate 里的 max_chars 闸值（压缩重试用） */
@@ -673,8 +675,11 @@ export class WorkflowOrchestrator {
       });
       if (agg.ok) {
         finalOutput = agg.value.content;
-        stepResults.push(agg.value.step);
+        stepResults.push(agg.value.step, ...(agg.value.extraSteps ?? []));
         warnings.push(`moa: aggregated ${outputs.length} candidate(s) into the final answer`);
+        if (agg.value.truncated) {
+          warnings.push('aggregate output may be truncated by the token cap (does not end with terminal punctuation) — treat the tail as incomplete');
+        }
       } else {
         warnings.push(agg.error.warning);
         if (agg.error.step) stepResults.push(agg.error.step);
@@ -1082,7 +1087,7 @@ export class WorkflowOrchestrator {
     original: string,
     outputs: Array<{ name: string; model: string; content: string }>,
     o: { guard: BudgetGuard; deadline: number; signal: AbortSignal; maxOutputTokens: number; maxRetries: number; maxChars?: number },
-  ): Promise<Result<{ content: string; step: StepResult }, { warning: string; step?: StepResult }>> {
+  ): Promise<Result<{ content: string; step: StepResult; truncated?: boolean; extraSteps?: StepResult[] }, { warning: string; step?: StepResult }>> {
     const agg = wf.aggregate;
     if (!agg) return err({ warning: 'aggregate not configured' });
     if (!this.adapters.has(agg.provider)) {
@@ -1135,31 +1140,78 @@ export class WorkflowOrchestrator {
       ? baseChecks
       : baseChecks.map((c) => (typeof c === 'object' && 'max_chars' in c ? { max_chars: Math.min(c.max_chars, o.maxChars!) } : c));
     const checks = runDeterministicChecks(call.value.content, tightened);
-    if (!checks.every((c) => c.passed)) {
-      const failed = checks.find((c) => !c.passed);
-      const failedChecksStep: StepResult = {
-        ...failedStep(`${failed?.checkId ?? 'check'} failed: ${failed?.detail ?? ''}`),
-        checks,
-      };
-      return err({
-        warning: `aggregate output rejected (${failed?.checkId ?? 'check'}: ${failed?.detail ?? ''}); falling back to concatenated comparison`,
-        step: failedChecksStep,
-      });
-    }
-    const step: StepResult = {
-      stepId: 'aggregate',
-      stepName: 'aggregate',
-      providerId: agg.provider,
-      modelId: agg.model,
-      mode,
-      status: 'succeeded',
-      startedAt: new Date(stepStart).toISOString(),
-      durationMs: Date.now() - stepStart,
-      checks,
-      usage: call.value.usage,
+    const okStep = (): StepResult => ({
+      stepId: 'aggregate', stepName: 'aggregate', providerId: agg.provider, modelId: agg.model,
+      mode, status: 'succeeded', startedAt: new Date(stepStart).toISOString(),
+      durationMs: Date.now() - stepStart, checks, usage: call.value.usage,
       ...(cost !== undefined ? { estimatedCost: cost } : {}),
+    });
+    /** 0.14.1：截断检测（与裁决同款）——末尾无终止标点即疑似被 token 封顶切断 */
+    const looksTruncated = (t: string): boolean => !/[。！？.!?!\]）"']$/.test(t.trim());
+
+    if (checks.every((c) => c.passed)) {
+      return ok({ content: call.value.content, step: okStep(), truncated: looksTruncated(call.value.content) });
+    }
+
+    const failed = checks.find((c) => !c.passed);
+    const failedStepFull: StepResult = {
+      ...failedStep(`${failed?.checkId ?? 'check'} failed: ${failed?.detail ?? ''}`),
+      checks,
     };
-    return ok({ content: call.value.content, step });
+
+    // 0.14.1：仅 max_chars 超闸时做一次自校准压缩重试（与辩论裁决同款——聚合此前只有拒绝降级）
+    const gate = maxCharsOf(agg.evaluate);
+    if (failed?.checkId === 'max_chars' && gate !== undefined) {
+      const ratio = call.value.usage?.outputTokens
+        ? Math.min(Math.max(call.value.content.length / call.value.usage.outputTokens, 1), 3)
+        : 1.5;
+      const retryCap = Math.max(64, Math.ceil(gate / ratio));
+      const retryPrompt = {
+        system: prompt.system,
+        user: prompt.user + `\n\nHARD LIMIT: your previous attempt was ${call.value.content.length} chars; the final answer MUST stay under ${gate} chars. Compress while keeping the key points.`,
+      };
+      const retryReserve = o.guard.reserve(
+        o.guard.estimateCostUsd(promptChars, retryCap, agg.provider, agg.model),
+        agg.provider, agg.model,
+      );
+      if (retryReserve.ok) {
+        const retryStart = Date.now();
+        const retry = await this.callWithRetry(synthetic, retryPrompt, {
+          timeoutMs: Math.max(1, Math.min(agg.timeout_ms ?? 90_000, o.deadline - Date.now())),
+          retries: 0, signal: o.signal, maxOutputTokens: retryCap,
+        });
+        if (retry.ok) {
+          const retryCost = o.guard.settle(retryReserve.value, retry.value.usage, agg.provider, agg.model, promptChars, retryCap);
+          const retryChecks = runDeterministicChecks(retry.value.content, tightened);
+          const retryOk = retryChecks.every((c) => c.passed);
+          const retryStep: StepResult = {
+            stepId: 'aggregate-retry', stepName: 'aggregate', providerId: agg.provider, modelId: agg.model,
+            mode, status: retryOk ? 'succeeded' : 'failed',
+            startedAt: new Date(retryStart).toISOString(), durationMs: Date.now() - retryStart,
+            checks: retryChecks, usage: retry.value.usage,
+            ...(retryCost !== undefined ? { estimatedCost: retryCost } : {}),
+          };
+          if (retryOk) {
+            return ok({
+              content: retry.value.content,
+              step: retryStep,
+              truncated: looksTruncated(retry.value.content),
+              extraSteps: [failedStepFull],
+            });
+          }
+          return err({
+            warning: `aggregate rejected (max_chars ${call.value.content.length} > ${gate}) and compress-retry still over limit; falling back to concatenated comparison`,
+            step: failedStepFull,
+          });
+        }
+        o.guard.release(retryReserve.value);
+      }
+    }
+
+    return err({
+      warning: `aggregate output rejected (${failed?.checkId ?? 'check'}: ${failed?.detail ?? ''}); falling back to concatenated comparison`,
+      step: failedStepFull,
+    });
   }
 
   /** 估算整个工作流的最坏情况费用（P2-④ 人工批准用） */
