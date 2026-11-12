@@ -20,7 +20,7 @@ class DebateAdapter implements ProviderAdapter {
     return { streaming: false, json: true, tools: false, vision: false };
   }
   async chat(req: ProviderChatRequest): Promise<Result<ProviderChatResponse, ProviderError>> {
-    if ((req.system ?? '').includes('impartial arbiter')) {
+    if ((req.system ?? '').includes('arbiter of a two-model')) {
       return { ok: true, value: { content: this.verdict, usage: { inputTokens: 20, outputTokens: 15 } } };
     }
     const mock = new MockProvider('m');
@@ -241,11 +241,11 @@ test('debate 0.13.2：开场带「只写己方立场」system（防单方开场=
   assert.ok(openings.every((x) => x.system.includes('ONE side')), '开场 system 应限定只写己方立场');
   assert.ok(openings.every((x) => x.system.includes('Do NOT simulate')), '开场应禁止模拟整场辩论');
   // 裁决：maxOutputTokens 从 max_chars 800 推导 = ceil(800/1.4)=572，且 < 工作流上限 2000
-  const arbiter = seen.find((x) => x.system.includes('impartial arbiter'));
+  const arbiter = seen.find((x) => x.system.includes('arbiter of a two-model'));
   assert.ok(arbiter, '应有裁决调用');
   assert.equal(arbiter!.maxOutputTokens, 800, 'token 上限应从字符闸推导（安全下界 1.0：ceil(800/1.0)）');
   // 裁决 system 含「折扣不可验证量化论据」
-  assert.ok(arbiter!.system.includes('Discount quantitative claims'), '裁决应折扣编造类论据');
+  assert.ok(arbiter!.system.includes('Discard any quantitative claims'), '裁决应折扣编造类论据');
 });
 
 /** 首次裁决超长、压缩重试收敛的适配器（0.13.3 自校准重试） */
@@ -255,7 +255,7 @@ class RetryArbiterAdapter implements ProviderAdapter {
   constructor(readonly providerId: string) {}
   capabilities() { return { streaming: false, json: false, tools: false, vision: false }; }
   async chat(req: ProviderChatRequest): Promise<Result<ProviderChatResponse, ProviderError>> {
-    if ((req.system ?? '').includes('impartial arbiter')) {
+    if ((req.system ?? '').includes('arbiter of a two-model')) {
       this.arbiterCalls++;
       const isRetry = req.user.includes('HARD LIMIT');
       const content = isRetry ? 'B 方更有说服力：成本论证被证伪。最终答案：分项迁移。' : '这是第一次裁决，写得非常长非常长非常长非常长非常长非常长非常长非常长非常长非常长非常长非常长，远超十个字的限制，一定会被字符闸拒绝。';

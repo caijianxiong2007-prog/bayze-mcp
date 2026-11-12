@@ -2,6 +2,34 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 1.0.0（2026-11-12）—— 首个稳定版
+
+五种多 AI 协作模式 + 六轮 dogfood 修复 + 商业闭环，达到生产可用标准。
+
+### v1.0 修复（全部来自六轮实测反馈）
+
+- **所有步骤输出上限统一走 tokenCapFor**：修订步此前裸用 max_output_tokens，
+  导致 doubao 用 1741 token 改一句 23 词的翻译——现在从 evaluate.max_chars
+  推导安全下界，与聚合成品同一规则
+- **debate 反驳轮差异化闸门**：反驳输出上限 = 步骤闸的 50%——解决「纪律限
+  500 字但引擎闸在 4000」的脱节，反驳应紧凑而非与开场等长
+- **裁决提示词精简**：从 9 条长指令压缩到 5 条短指令（保留全部关键约束：
+  编造折扣/语言规范/长度限制/UNTRUSTED），减少 system token 消耗
+  （裁决占 debate 成本 90%，其中一半来自冗长提示词）
+
+### 累计能力（v0.1.0 → v1.0.0）
+
+| 领域 | 能力 |
+|---|---|
+| 协作模式 | waterfall（含修订循环+升级）/ parallel（含评委）/ moa / debate（含立场+裁决） |
+| 安全 | 预算守卫（预估算/原子预留/未知价 fail-closed）/ 人工批准 / 确定性检查 / UNTRUSTED 边界 |
+| 适配器 | mock / openai-compatible / anthropic / gemini |
+| 接入 | MCP stdio / localhost API（SSE 流式+Web UI） |
+| 商业 | BYOK + Bayze 统一 API（注册引导/402 充值/balance 查询） |
+| 审计 | 本地 journal / 每步 mode/usage/cost / debateExchanges / candidates |
+
+- 193 测试全绿；MIT；TypeScript strict + Node ≥22
+
 ## 0.14.2（2026-11-07）—— Cherry 转正后四场景测试反馈
 
 - **debate 发言记录审计面补齐**：RunResult 新增 `debateExchanges`（开场+各轮反驳全文，

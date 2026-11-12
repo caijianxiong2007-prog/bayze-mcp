@@ -250,7 +250,8 @@ export class WorkflowOrchestrator {
         timeoutMs,
         retries,
         signal: opts.signal,
-        maxOutputTokens: wf.limits.max_output_tokens,
+        // v1.0 修复：修订步输出上限从 evaluate.max_chars 推导（doubao 实测 1741 token 改一句 23 词）
+        maxOutputTokens: tokenCapFor(step.evaluate, wf.limits.max_output_tokens),
       });
 
       if (!call.ok) {
@@ -818,11 +819,13 @@ export class WorkflowOrchestrator {
       return p && p.kind !== 'mock' ? p.mode : 'byok';
     };
 
-    /** 单次辩手发言（开场/反驳共用）：预算 reserve→call→settle→checks */
+    /** 单次辩手发言（开场/反驳共用）：预算 reserve→call→settle→checks
+     * v1.0 修复 2：outputCap 可选参数——反驳轮用步骤闸的 50%，避免「纪律限 500 字但闸在 4000」的脱节 */
     const speak = async (
       step: StepConfig,
       prompt: { system?: string; user: string },
       label: string,
+      outputCap?: number,
     ): Promise<{ ok: boolean; content: string }> => {
       const stepStart = Date.now();
       const promptChars = (prompt.system ?? '').length + prompt.user.length;
@@ -842,7 +845,7 @@ export class WorkflowOrchestrator {
         timeoutMs,
         retries: step.max_retries ?? wf.limits.max_retries_per_step,
         signal: opts.signal,
-        maxOutputTokens: wf.limits.max_output_tokens,
+        maxOutputTokens: outputCap ?? tokenCapFor(step.evaluate, wf.limits.max_output_tokens),
       });
       const sr: StepResult = {
         stepId: label, stepName: step.name, providerId: step.provider, modelId: step.model,
@@ -901,9 +904,14 @@ export class WorkflowOrchestrator {
       if (Date.now() >= deadline || opts.signal.aborted) break;
       const promptA = debateRebuttalPrompt({ original: req.input, own: posA, opponent: posB, round: r, stance: wf.stances?.[0] });
       const promptB = debateRebuttalPrompt({ original: req.input, own: posB, opponent: posA, round: r, stance: wf.stances?.[1] });
+      // v1.0 修复 2：反驳轮输出上限 = 步骤闸的 50%（开场可以写长，反驳应紧凑）
+      const rebuttalCap = (() => {
+        const base = tokenCapFor(a.evaluate, wf.limits.max_output_tokens);
+        return Math.max(64, Math.ceil(base / 2));
+      })();
       const res = await Promise.all([
-        posA ? speak(a, promptA, `${2 * r + 1}.${a.name}-r${r}`) : Promise.resolve({ ok: false, content: '' }),
-        posB ? speak(b, promptB, `${2 * r + 2}.${b.name}-r${r}`) : Promise.resolve({ ok: false, content: '' }),
+        posA ? speak(a, promptA, `${2 * r + 1}.${a.name}-r${r}`, rebuttalCap) : Promise.resolve({ ok: false, content: '' }),
+        posB ? speak(b, promptB, `${2 * r + 2}.${b.name}-r${r}`, rebuttalCap) : Promise.resolve({ ok: false, content: '' }),
       ]);
       const newA = res[0]?.ok ? res[0].content : posA;
       const newB = res[1]?.ok ? res[1].content : posB;
