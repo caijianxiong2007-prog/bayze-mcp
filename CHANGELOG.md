@@ -2,6 +2,18 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 1.2.0（2026-11-13）—— 客户端自动注册
+
+`bayze init` 向导新增第⑨步：探测本机已安装的 MCP 客户端配置文件，自动合并写入
+bayze-mcp 注册条目（原文件备份 .bak，保留已有其他 mcpServers 条目）。
+
+- 支持探测：Claude Desktop / Cursor / VSCode (Copilot MCP)（JSON 型配置）
+- Cherry Studio 存 SQLite（实测确认），不支持自动注册——走 init 输出的 JSON 手动粘贴
+- 合并幂等：bayze-mcp 条目已存在时刷新不叠加
+- 非法 JSON 的客户端文件跳过不破坏
+- v1.1.0 修复附带：debate 反驳轮差异化闸门 + 裁决提示词精简 + 全步骤 tokenCapFor
+- 205 测试全绿（+6 client-register 套件）
+
 ## 1.1.0（2026-11-13）—— `bayze init` 交互式配置向导
 
 新用户 5 分钟完成接入：选供应商 → 粘 Key → 自动生成配置 → 校验 → 输出 Cherry Studio 注册 JSON。

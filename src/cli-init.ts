@@ -104,9 +104,29 @@ export async function initCmd(args: string[]): Promise<number> {
   process.stdout.write(`=== 在 Cherry Studio 注册（设置 → MCP 服务器 → 添加）===\n`);
   process.stdout.write(renderCherryJson(ans) + `\n\n`);
 
-  // ⑧ 立即测试
+  // ⑧ 客户端自动注册（v1.2.0）：探测 JSON 型客户端配置文件，合并写入 bayze-mcp
+  const { detectClientTargets, registerToClient } = await import('./config/client-register.js');
+  const targets = detectClientTargets();
+  const configAbsPath = written.value.configPath;
+  if (targets.length > 0) {
+    process.stdout.write(`⑨ 检测到以下 MCP 客户端配置文件，是否自动注册 bayze-mcp？（y=全部注册 / n=跳过，手动粘贴）：\n`);
+    for (const t of targets) process.stdout.write(`  - ${t.label}  (${t.configPath})\n`);
+    const yn = (await ask('y/n：')).trim().toLowerCase();
+    if (yn === 'y' || yn === 'yes') {
+      for (const target of targets) {
+        const r = registerToClient(target, configAbsPath);
+        if (r.added) process.stdout.write(`  ✓ ${r.client}: 已注册（备份 ${r.backupPath}）\n`);
+        else process.stdout.write(`  ○ ${r.client}: bayze-mcp 条目已存在，跳过\n`);
+      }
+      process.stdout.write(`  重启客户端后生效\n\n`);
+    } else {
+      process.stdout.write(`  跳过——可手动粘贴第⑦步输出的 JSON\n\n`);
+    }
+  }
+
+  // ⑨ 立即测试
   process.stdout.write(`=== 立即测试 ===\n`);
-  process.stdout.write(`  node dist/src/cli.js run --workflow quick_answer --config ${written.value.configPath} --input "你好"\n`);
+  process.stdout.write(`  node dist/src/cli.js run --workflow quick_answer --config ${configAbsPath} --input "你好"\n`);
   process.stdout.write(`  （或 bayze run --workflow quick_answer --input "你好"）\n\n`);
   return 0;
 }
