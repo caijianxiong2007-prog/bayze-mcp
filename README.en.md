@@ -23,6 +23,8 @@ Bring your own keys (BYOK). No telemetry, no cloud components, no listening port
 
 ## Install
 
+**One-command setup for new users**: `bayze init` — interactive wizard: pick providers → paste API keys → auto-generate config + .env → validate → print Cherry Studio registration JSON. 5 minutes to full setup.
+
 ```bash
 # Run directly (recommended)
 npx -y bayze-mcp mcp --config /path/to/config.yaml

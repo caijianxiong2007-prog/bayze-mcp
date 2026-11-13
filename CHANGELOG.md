@@ -2,6 +2,18 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 1.1.0（2026-11-13）—— `bayze init` 交互式配置向导
+
+新用户 5 分钟完成接入：选供应商 → 粘 Key → 自动生成配置 → 校验 → 输出 Cherry Studio 注册 JSON。
+
+- **`bayze init [--dir <dir>]`**：六大主流供应商预设（DeepSeek/通义/火山方舟/Claude/OpenAI/Bayze API），
+  选号即打印注册链接；Key 存 `~/.bayze/.env`（600 权限），config.yaml 只含 env: 引用可公开分享
+- **生成即校验**：config.yaml 用与主解析器同一 schema 校验，不合格不落盘（fail-closed）
+- **防覆盖**：已有 config.yaml 时不静默覆盖，需手动删除或换目录
+- **loadDotEnv**：`.env` 注入 process.env（不覆盖已有值）；后续 run/mcp 自动可用
+- **输出 Cherry Studio 注册 JSON**：消灭「照文档抄参数」这一错漏高发环节
+- 199 测试全绿（+6 init 套件）；TTY 交互 / 管道两种输入模式均支持
+
 ## 1.0.0（2026-11-12）—— 首个稳定版
 
 五种多 AI 协作模式 + 六轮 dogfood 修复 + 商业闭环，达到生产可用标准。

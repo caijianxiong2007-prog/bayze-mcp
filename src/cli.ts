@@ -9,6 +9,7 @@ import { WorkflowOrchestrator } from './application/workflows/orchestrator.js';
 import { RunJournal } from './journal/journal.js';
 import { McpApp } from './transport/mcp/app.js';
 import { startStdioServer } from './transport/mcp/server.js';
+import { initCmd } from './cli-init.js';
 import { guardRuntimeEnv } from './cli-guard.js';
 import { loadTasks, runEvaluation, formatEvalComparison } from './application/eval.js';
 import type { EvalSummary } from './application/eval.js';
@@ -24,6 +25,7 @@ commands:
   config path                                 print the default config path
   run --workflow <id> [options]               execute a workflow (dev/acceptance tool)
   mcp [--config <path>] [--no-journal]        start the MCP stdio server (for AI clients)
+  init [--dir <dir>]                          interactive setup wizard (generates config + .env)
   journal path                                print the default journal path
   journal clear                               delete the journal file
   journal tail [n]                            show the last n run summaries (default 20)
@@ -82,6 +84,8 @@ async function main(argv: string[]): Promise<number> {
       return balanceCmd(rest);
     case 'serve':
       return serveCmd(rest);
+    case 'init':
+      return initCmd(rest);
     case 'export':
       return exportCmd(rest);
     default:

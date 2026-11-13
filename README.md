@@ -16,6 +16,9 @@
 
 ## 安装
 
+
+**新用户一键配置**：`bayze init`（交互式向导，选供应商 → 粘 Key → 自动生成配置 + .env → 校验 → 输出 Cherry Studio 注册 JSON），5 分钟完成接入。
+
 已发布 npm（包名 `bayze-mcp`，命令 `bayze`），三种方式任选：
 
 ```bash
