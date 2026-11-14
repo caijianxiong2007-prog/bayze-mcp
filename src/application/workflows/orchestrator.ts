@@ -142,6 +142,28 @@ export class WorkflowOrchestrator {
       );
     }
 
+    // v1.3.0 扩展：debate 裁决者（judge）同样依赖 JSON 输出——能力契约覆盖 arbiter。
+    // judge.evaluate 存在时（裁决输出走确定性检查），若模型声明 unsupported 则拒启；
+    // strict 模式下未验证也拒启（与评审门同一规则）。
+    if (wf.strategy === 'debate' && wf.judge) {
+      const judge = wf.judge;
+      const jc = this.cfg.providers[judge.provider];
+      const jModel = jc?.models.find((m) => m.id === judge.model);
+      const jVerdict = jModel?.capabilities?.json_verdict;
+      const hasVerdictChecks = judge.evaluate !== undefined;
+      const judgeStrict = wf.limits.strict_capabilities;
+      if (jVerdict === 'unsupported' || (judgeStrict && hasVerdictChecks && jVerdict !== 'verified')) {
+        const state = jVerdict ?? 'unverified';
+        return err({
+          code: 'provider_unavailable',
+          message:
+            `capability check failed: debate arbiter ${wf.judge.provider}/${wf.judge.model} ` +
+            `is declared "${state}"` +
+            (jVerdict === 'unsupported' ? ' (实测不可用，fail-closed 拒绝启动)' : ' (strict_capabilities=true，未验证拒绝启动)'),
+        } as RunSetupError);
+      }
+    }
+
     // P2-④ 人工批准：预估总费用超过门槛且用户未确认 → 暂停（对全部策略生效，先于策略分发——
     // 0.12.0 修复：此前审批检查位于 parallel 分发之后，parallel/moa 会绕过批准）
     if (wf.limits.approval_threshold_usd !== undefined && req.userOverrides?.approved !== true) {

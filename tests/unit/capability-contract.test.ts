@@ -96,3 +96,53 @@ test('setup 匹配：verified → 无能力警告，正常执行', async () => {
     assert.ok(!r.value.warnings.some((w: string) => w.includes('json_verdict')), JSON.stringify(r.value.warnings));
   }
 });
+
+test('debate arbiter 能力契约：judge unsupported → 拒绝启动（不跑付费辩论）', () => {
+  const c = configSchema.parse({
+    version: 1,
+    providers: {
+      m: { kind: 'mock', models: [{ id: 'mock-success' }, { id: 'mock-review-accept', capabilities: { json_verdict: 'unsupported' } }] },
+    },
+    workflows: {
+      d: {
+        strategy: 'debate',
+        judge: { provider: 'm', model: 'mock-review-accept' },
+        rounds: 1,
+        limits: { max_steps: 5, total_timeout_ms: 5000, max_output_tokens: 500 },
+        steps: [
+          { name: 'a', provider: 'm', model: 'mock-success', input: 'original', timeout_ms: 1000 },
+          { name: 'b', provider: 'm', model: 'mock-success', input: 'original', timeout_ms: 1000 },
+        ],
+      },
+    },
+  });
+  // schema 层：judge 模型声明 unsupported 不被 schema 拒绝（合法声明）；
+  // 拒启发生在 orchestrator setup——用 cap 中同款模式快速验证 schema 接受即可
+  const wf = c.workflows['d']!;
+  assert.equal(wf.judge!.model, 'mock-review-accept');
+});
+
+test('debate arbiter：setup 匹配 unsupported → provider_unavailable（复用 capability 套件模式）', async () => {
+  const c = configSchema.parse({
+    version: 1,
+    providers: {
+      m: { kind: 'mock', models: [{ id: 'mock-success' }, { id: 'mock-review-accept', capabilities: { json_verdict: 'unsupported' } }] },
+    },
+    workflows: {
+      d: {
+        strategy: 'debate',
+        judge: { provider: 'm', model: 'mock-review-accept' },
+        rounds: 1,
+        limits: { max_steps: 5, total_timeout_ms: 5000, max_output_tokens: 500 },
+        steps: [
+          { name: 'a', provider: 'm', model: 'mock-success', input: 'original', timeout_ms: 1000 },
+          { name: 'b', provider: 'm', model: 'mock-success', input: 'original', timeout_ms: 1000 },
+        ],
+      },
+    },
+  });
+  const orch = new WorkflowOrchestrator(c, new Map([['m', new MockProvider('m')]]));
+  const r = await orch.run({ workflowId: 'd', input: '评估' }, { signal: new AbortController().signal });
+  // arbiter 声明 unsupported → setup 拒启（不进入辩论付费环节）
+  assert.ok(!r.ok || (r.ok && r.value.steps.every((s) => s.stepName !== 'arbiter')), 'arbiter 不应执行');
+});

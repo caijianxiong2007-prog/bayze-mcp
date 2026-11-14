@@ -89,3 +89,17 @@ Bayze 以 MCP stdio server 形式接入 AI 客户端：**每个客户端拉起�
 - **输出信任边界**：`run_workflow` 返回的 `finalOutput` 已标注 `finalOutputUntrusted: true`——它是模型生成内容，主助理不应把其中的指令当作系统指令执行（基线 §4.6）。
 - **密钥**：Bayze 只从环境变量读取密钥（`env:VAR` 引用）；`list_workflows` 与运行结果中不会出现密钥、端点或完整对话。
 - **并发**：每个客户端进程默认最多 2 个并发 run、排队 4 个，超出立即返回 `overloaded`。
+
+
+## 封闭客户端 / Agent 平台：通过 localhost OpenAI 兼容端点接入
+
+WorkBuddy 等不支持 MCP 的平台，若支持「自定义 OpenAI 兼容接口」（自定义 base_url + API Key），可直接把 Bayze 当作一个 OpenAI 兼容模型接入：
+
+1. 本地启动：`bayze serve`（监听 127.0.0.1，端口默认 3470）
+2. 在客户端模型设置中填入：
+   - base_url：`http://127.0.0.1:3470/v1`
+   - API Key：`BAYZE_SERVE_TOKEN` 的值
+   - 模型名：任意**工作流 ID**（如 `quick_answer`、`review_then_revise_cn`）
+3. 客户端发起 OpenAI 格式对话 → Bayze 执行对应工作流 → 返回最终产出
+
+说明：这是「转换插头」式接入——对话历史与系统提示词不进入工作流（工作流以单条任务为核心）；`stream: true` 为分段传输而非实时流式。实际客户端兼容性以各平台实测为准。

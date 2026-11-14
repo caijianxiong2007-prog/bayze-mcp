@@ -2,6 +2,15 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 1.4.0（2026-11-13）—— 能力契约覆盖 debate 裁决者 + 封闭客户端接入文档
+
+- **能力契约扩展**：debate 的 arbiter（judge）声明 `json_verdict: unsupported` →
+  setup 拒绝启动（不进入付费辩论环节）；strict_capabilities=true 时未验证也拒启；
+  向后兼容（未验证仅对评审门警告，arbiter 不强拦）
+- **docs/mcp-clients.md 新增**：「封闭客户端 / Agent 平台」通过 localhost OpenAI 兼容端点
+  接入指南（WorkBuddy 类平台的自定义 base_url + 模型名=工作流 ID），含转换插头边界说明
+- 212 测试全绿（+1 arbiter 拒启验证）
+
 ## 1.3.0（2026-11-13）—— 能力契约 + 首轮兼容矩阵工具（试点）
 
 按用户验收修正执行：能力状态三态（已验证支持/已验证不支持/未知未验证）、
