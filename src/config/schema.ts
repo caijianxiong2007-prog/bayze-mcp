@@ -28,6 +28,15 @@ const modelSchema = z
     id: modelId,
     /** 仅提示，不作为路由真值/安全决策依据（基线 §6） */
     capabilities_hint: z.array(z.enum(['chat', 'json', 'tools', 'vision', 'streaming'])).optional(),
+    /** 实测能力声明（v1.3.0 契约）：json_verdict = 该模型在该供应商端点上，
+     *  评审门所需的 JSON 结论经实测可稳定解析（verified）/ 实测不可用（unsupported）/ 未验证（缺省）。
+     *  与 capabilities_hint 不同：本字段接入 setup 匹配（见 orchestrator 校验与 strict_capabilities）。 */
+    capabilities: z
+      .object({
+        json_verdict: z.enum(['verified', 'unsupported']).optional(),
+      })
+      .strict()
+      .optional(),
     pricing: pricing.optional(),
   })
   .strict();
@@ -99,6 +108,8 @@ const limitsSchema = z
     max_retries_per_step: z.number().int().min(0).optional().default(0),
     /** 人工批准门槛（P2-④）：预估费用超过此值时暂停等待用户确认 */
     approval_threshold_usd: z.number().min(0).optional(),
+    /** 能力严格模式（v1.3.0）：true 时，评审门模型 json_verdict 为未验证/缺省也拒绝启动（默认 false=仅警告） */
+    strict_capabilities: z.boolean().optional().default(false),
     /** 修订循环上限（ADR-0006 D3）：waterfall 评审打回后的最大修订执行次数，默认 1=单次（旧行为） */
     max_revisions: z.number().int().min(1).optional().default(1),
   })

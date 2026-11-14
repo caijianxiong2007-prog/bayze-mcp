@@ -115,6 +115,33 @@ export class WorkflowOrchestrator {
       this.adapters.set(step.provider, created.value);
     }
 
+    const setupWarnings: string[] = [];
+    // v1.3.0 能力契约（setup 匹配）：评审门步骤检查目标模型的 json_verdict 实测声明。
+    // unsupported → 拒绝启动（fail-closed，不付费失败）；unverified/缺省 → 警告；
+    // limits.strict_capabilities=true 时未验证也拒绝启动（用户显式选择严格）。
+    for (const step of wf.steps) {
+      if (step.gate !== 'structured_review') continue;
+      const pcfg = this.cfg.providers[step.provider];
+      const model = pcfg?.models.find((m) => m.id === step.model);
+      const verdict = model?.capabilities?.json_verdict; // undefined = 未验证
+      const strict = wf.limits.strict_capabilities;
+      if (verdict === 'unsupported' || (strict && verdict !== 'verified')) {
+        const state = verdict ?? 'unverified';
+        return err({
+          code: 'provider_unavailable',
+          message:
+            `capability check failed: step "${step.name}" requires parseable JSON verdicts, ` +
+            `but ${step.provider}/${step.model} is declared "${state}"` +
+            (verdict === 'unsupported' ? ' (实测不可用，fail-closed 拒绝启动)' : strict ? ' (strict_capabilities=true，未验证拒绝启动)' : ''),
+        } as RunSetupError);
+      }
+      if (verdict === 'verified') continue;
+      setupWarnings.push(
+        `capability notice: reviewer ${step.provider}/${step.model} json_verdict is unverified — ` +
+          `评审门可能解析失败（运行前可实测并声明 capabilities.json_verdict）`,
+      );
+    }
+
     // P2-④ 人工批准：预估总费用超过门槛且用户未确认 → 暂停（对全部策略生效，先于策略分发——
     // 0.12.0 修复：此前审批检查位于 parallel 分发之后，parallel/moa 会绕过批准）
     if (wf.limits.approval_threshold_usd !== undefined && req.userOverrides?.approved !== true) {
@@ -147,7 +174,7 @@ export class WorkflowOrchestrator {
       return this.runDebate(wf, reqWithTask, opts);
     }
 
-    const warnings: string[] = [];
+    const warnings: string[] = [...setupWarnings];
     const { maxSteps, totalTimeoutMs, maxCostUsd, maxChars } = applyOverrides(wf, req.userOverrides, warnings);
     /** P1/ADR-0003 D4：per-run max_chars 覆盖——收紧-only，注入确定性检查 */
     const effectiveChecks = (step: (typeof wf.steps)[number]) => {
