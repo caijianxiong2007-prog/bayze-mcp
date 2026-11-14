@@ -2,6 +2,22 @@
 
 本项目遵循基线规范（`docs/baseline-spec.md`）的阶段交付。
 
+## 1.3.0（2026-11-13）—— 能力契约 + 首轮兼容矩阵工具（试点）
+
+按用户验收修正执行：能力状态三态（已验证支持/已验证不支持/未知未验证）、
+能力具体到供应商+模型、setup 显式不支持→拒绝启动（付费前 fail-closed）、
+未知→警告（strict_capabilities=true 时也拒启）、旧配置向后兼容（仅警告）。
+
+- schema：模型级 `capabilities.json_verdict`（verified/unsupported/缺省）；
+  limits.`strict_capabilities`（默认 false）
+- setup 匹配：评审门步骤检查目标模型声明——unsupported 拒启；
+  unverified 警告（strict 时拒启）；verified 无警告
+- `bayze compat --config <路径> [--out <目录>] [--include-mock]`：
+  动态构造交叉复核+受限写作工作流 → 对配置内全部模型实测 → 更新
+  docs/compatibility.md 标记区间 + compatibility.json（记录完整验收字段）
+- 首轮试点矩阵执行与 docs/compatibility.md 填充：待用户确认智谱 GLM Key 后跑批
+- 210 测试全绿（+11 能力契约/客户端注册）
+
 ## 1.2.0（2026-11-13）—— 客户端自动注册
 
 `bayze init` 向导新增第⑨步：探测本机已安装的 MCP 客户端配置文件，自动合并写入

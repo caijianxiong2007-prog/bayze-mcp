@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // bayze CLI：config / run / mcp / journal / eval（评测对比）
 import { createRequire } from 'node:module';
+import { join, resolve } from 'node:path';
 import { loadConfig, formatConfigError } from './config/loader.js';
 import { BAYZE_API_CONSOLE_URL, BAYZE_API_BILLING_URL } from './config/schema.js';
 import { defaultConfigPath, defaultJournalPath } from './config/paths.js';
@@ -10,6 +11,7 @@ import { RunJournal } from './journal/journal.js';
 import { McpApp } from './transport/mcp/app.js';
 import { startStdioServer } from './transport/mcp/server.js';
 import { initCmd } from './cli-init.js';
+import { runCompatMatrix } from '../src/application/compat.js';
 import { guardRuntimeEnv } from './cli-guard.js';
 import { loadTasks, runEvaluation, formatEvalComparison } from './application/eval.js';
 import type { EvalSummary } from './application/eval.js';
@@ -82,6 +84,8 @@ async function main(argv: string[]): Promise<number> {
       return modelsCmd(rest);
     case 'balance':
       return balanceCmd(rest);
+    case 'compat':
+      return compatCmd(rest);
     case 'serve':
       return serveCmd(rest);
     case 'init':
@@ -318,6 +322,30 @@ async function modelsCmd(args: string[]): Promise<number> {
     process.stderr.write(`Error: ${(e as Error).message}\n`);
     return 1;
   }
+}
+
+/** 兼容性矩阵 runner（v1.3.0 试点）：跑批并产出 docs/compatibility.md */
+function compatCmd(args: string[]): number {
+  let configPath: string | undefined;
+  let outDir = 'docs';
+  let runs = 1;
+  let includeMock = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--config') configPath = args[++i];
+    else if (args[i] === '--out') outDir = args[++i] ?? 'docs';
+    else if (args[i] === '--runs') runs = Math.max(1, Number(args[++i] ?? 1));
+    else if (args[i] === '--include-mock') includeMock = true;
+    else return fail(`unknown option: ${args[i]}`, 2);
+  }
+  if (!configPath) return fail('--config <path> is required', 2);
+  const resolved = resolve(process.cwd(), outDir)
+  runCompatMatrix(configPath, resolved, { runs, includeMock })
+    .then((code) => process.exit(code))
+    .catch((e) => {
+      process.stderr.write(`compat failed: ${(e as Error).message}\n`);
+      process.exit(1);
+    });
+  return -1; // async，进程由上方 process.exit 结束
 }
 
 /** 查询 Bayze API 点数余额（P1 商业闭环；端点未上线时降级到控制台指引） */
