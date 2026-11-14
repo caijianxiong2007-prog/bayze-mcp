@@ -11,3 +11,4 @@ dist/
 *.log
 *.tgz
 .DS_Store
+tmp/
