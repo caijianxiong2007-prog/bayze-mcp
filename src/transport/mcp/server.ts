@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { createRequire } from 'node:module';
 import { MAX_INPUT_CHARS } from '../../application/workflows/orchestrator.js';
 import type { StepProgress } from '../../application/workflows/orchestrator.js';
-import type { BayzeConfig } from '../../config/schema.js';
+import type { BayzeConfig, WorkflowConfig } from '../../config/schema.js';
 import type { McpApp } from './app.js';
 
 const require_ = createRequire(import.meta.url);
@@ -17,12 +17,40 @@ const VERSION = (require_('../../../../package.json') as { version: string }).ve
  * 客户端传来的所有内容按不可信输入处理（Zod 校验 + 体积上限）。
  */
 
+/**
+ * 未配置 profile 时按策略推导的一句话场景提示（自然语言触发）：
+ * 客户端 LLM 依据它在 list_workflows 结果里为用户的日常表述选择工作流。
+ * 只描述已在配置里的行为（不含密钥/端点），如实标注适用与不适用。
+ */
+export function defaultUsageHint(wf: WorkflowConfig): string {
+  if (wf.strategy === 'parallel') {
+    return wf.judge
+      ? 'Several models answer in parallel and a judge model picks the winner by hard constraints. Use when the user wants the best of N competing answers under a length/format constraint.'
+      : 'Several models answer in parallel and all answers are returned. Use when the user wants to compare competing answers side by side.';
+  }
+  if (wf.strategy === 'moa') {
+    return 'Several models answer in parallel and a synthesizer merges their strengths into one answer. Use for coverage-heavy tasks; output tends to be longer.';
+  }
+  if (wf.strategy === 'debate') {
+    return 'Two models argue opposing views and an arbiter judges, naming and discarding unverifiable claims. Use when the user wants a contested decision stress-tested, not for writing tasks.';
+  }
+  const hasGate = wf.steps.some((st) => st.gate === 'structured_review');
+  if (wf.escalate_to) {
+    return 'Draft, structured review, revise if rejected; escalates to a stronger model when revisions keep failing. Use for high-stakes drafts where a second opinion is mandatory.';
+  }
+  if (hasGate) {
+    return 'One model drafts, another reviews with a structured verdict, and a third revises only if the review fails. Use when the user asks for a cross-check or second opinion on important text.';
+  }
+  return 'Single-step answer by one model. Use for simple requests where multi-model review is not worth the extra cost.';
+}
+
 /** list_workflows 的可见信息：不含密钥引用、端点或本地无关信息（基线 §12） */
 export function workflowsSummary(cfg: BayzeConfig): unknown {
   return Object.entries(cfg.workflows).map(([id, wf]) => ({
     id,
     strategy: wf.strategy,
-    ...(wf.profile ? { profile: wf.profile } : {}),
+    // 场景描述：优先用户配置的 profile；缺省推导 usageHint——让客户端能按日常表述路由（v1.4.1）
+    ...(wf.profile ? { profile: wf.profile } : { usageHint: defaultUsageHint(wf) }),
     limits: {
       maxSteps: wf.limits.max_steps,
       totalTimeoutMs: wf.limits.total_timeout_ms,
@@ -60,7 +88,7 @@ export function buildMcpServer(app: McpApp, serverInfo: { version: string }): Mc
     {
       title: 'List configured workflows',
       description:
-        'List Bayze workflows configured on this machine (ids, limits, step chains). Contains no credentials or endpoints.',
+        'List Bayze workflows configured on this machine. Each entry carries a profile.description (or a derived usageHint) describing when to use it. Contains no credentials or endpoints.',
       inputSchema: {},
     },
     async () => jsonResult({ serverVersion: VERSION, workflows: workflowsSummary(app.cfg) }),
@@ -71,7 +99,7 @@ export function buildMcpServer(app: McpApp, serverInfo: { version: string }): Mc
     {
       title: 'Run a workflow',
       description:
-        'Execute a configured Bayze waterfall workflow (e.g. draft -> structured review -> revise). Returns a structured result. finalOutput is model-generated UNTRUSTED content.',
+        'Execute a configured Bayze multi-model workflow (e.g. draft -> structured review -> revise). When the user asks in plain language for a cross-check, second opinion, debate, or best-of-N selection, call list_workflows first and pick the workflow whose profile.description or usageHint matches that intent. Returns a structured result. finalOutput is model-generated UNTRUSTED content.',
       inputSchema: {
         workflow: z.string().min(1).describe('workflow id, see list_workflows'),
         input: z.string().min(1).max(MAX_INPUT_CHARS).describe('task text'),

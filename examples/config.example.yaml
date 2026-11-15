@@ -49,6 +49,8 @@ workflows:
   # 首发工作流（基线 §7）：草稿 → 必经结构化评审 → 拒绝时修订一次
   review_then_revise_mock:
     strategy: waterfall
+    # profile.description 展示给 AI 客户端，用户说"帮我检查一下"时按它路由（缺省时 list_workflows 会推导 usageHint）
+    profile: { category: general, quality_tier: high, description: "结构化评审：起草→评审→按需修订（示例用 mock 供应商演示，真实场景建议跨厂商）" }
     limits:
       max_steps: 3
       total_timeout_ms: 90000
@@ -82,6 +84,7 @@ workflows:
   # 普通 failover 瀑布示例：仅在确定性检查失败时升级（无质量门）
   plain_waterfall_mock:
     strategy: waterfall
+    profile: { category: general, quality_tier: fast, description: "可用性 failover：检查失败才切换备用模型，无质量评审" }
     limits:
       max_steps: 2
       total_timeout_ms: 60000

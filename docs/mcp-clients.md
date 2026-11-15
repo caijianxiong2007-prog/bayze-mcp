@@ -90,6 +90,16 @@ Bayze 以 MCP stdio server 形式接入 AI 客户端：**每个客户端拉起�
 - **密钥**：Bayze 只从环境变量读取密钥（`env:VAR` 引用）；`list_workflows` 与运行结果中不会出现密钥、端点或完整对话。
 - **并发**：每个客户端进程默认最多 2 个并发 run、排队 4 个，超出立即返回 `overloaded`。
 
+## 自然语言触发（v1.4.1）
+
+用户不必记住工作流 ID。对着客户端说日常表述（如「帮我检查一下这段声明」「让两个模型辩一下这个方案」），客户端 LLM 会依据 `list_workflows` 的结果自行路由：
+
+- 配置里写了 `profile.description` 的工作流，按它展示给客户端（`bayze init` 生成的配置已内置）。
+- 未配置 profile 的工作流，`list_workflows` 会按策略自动推导 `usageHint`（如 parallel+judge → "a judge model picks the winner by hard constraints"），零配置即可被正确选择。
+- `run_workflow` 的工具描述已含路由提示：客户端 LLM 在用户意图与工作流不明确时，会先调用 `list_workflows` 匹配。
+
+示例配置与自定义工作流建议都写上 `profile`（category / quality_tier / description），描述越具体，路由越准。
+
 
 ## 封闭客户端 / Agent 平台：通过 localhost OpenAI 兼容端点接入
 
