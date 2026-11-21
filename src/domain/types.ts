@@ -98,8 +98,14 @@ export interface RunResult {
   stopReason: StopReason;
   triggerReason?: TriggerReason;
   warnings: string[];
-  /** 最近一次结构化评审结论（若有）；模型意见而非事实保证（基线 §7） */
-  reviewSummary?: { verdict: 'accept' | 'revise'; reasons: string[] };
+  /** 最近一次结构化评审结论（若有）；模型意见而非事实保证（基线 §7）
+   *  v1.4.2：review_schema 含 claims_checked 时附带逐条核查清单（claim + 评审者自报的 source），
+   *  让「通过」可审计——但 source 是评审者自报，不等于真实核验。 */
+  reviewSummary?: {
+    verdict: 'accept' | 'revise';
+    reasons: string[];
+    claimsChecked?: Array<{ claim: string; source: string }>;
+  };
   /** parallel/moa 输出一致性（ADR-0006 D2）：成功候选间平均两两 Jaccard 相似度（0-1）。
    * 语义：多模型答案的相互印证程度——低=各答各的（差异大），高=答案趋同。
    * 它不是任何模型的自信度，也不是评委会选的把握度。v1 启发式信号而非保证。 */

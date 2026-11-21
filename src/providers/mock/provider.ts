@@ -17,6 +17,7 @@ import type {
 type Scenario =
   | 'success'
   | 'review_accept'
+  | 'review_accept_with_claims'
   | 'review_revise'
   | 'empty'
   | 'timeout'
@@ -32,6 +33,7 @@ type Scenario =
 const SCENARIOS: Record<string, Scenario> = {
   'mock-success': 'success',
   'mock-review-accept': 'review_accept',
+  'mock-review-claims': 'review_accept_with_claims',
   'mock-review-revise': 'review_revise',
   'mock-empty': 'empty',
   'mock-timeout': 'timeout',
@@ -100,7 +102,17 @@ export class MockProvider implements ProviderAdapter {
         ? ''
         : scenario === 'review_accept'
           ? JSON.stringify({ verdict: 'accept', reasons: ['mock reviewer accepted the draft'] })
-          : scenario === 'review_revise'
+          : scenario === 'review_accept_with_claims'
+            ? JSON.stringify({
+                verdict: 'accept',
+                reasons: ['mock reviewer accepted after checking claims'],
+                claims_checked: [
+                  { claim: 'the draft states a factual claim', source: 'draft' },
+                  'a second claim verified against the task',
+                  { claim: 'an unsupported assertion', source: 'NOT_FOUND' },
+                ],
+              })
+            : scenario === 'review_revise'
             ? JSON.stringify({ verdict: 'revise', reasons: ['mock reviewer requested one revision'] })
             : `MOCK_OK[${req.modelId}] deterministic reply (${inputChars(req)} chars of input).`;
 

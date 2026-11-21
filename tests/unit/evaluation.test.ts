@@ -58,6 +58,62 @@ test('parseReview：schema 要求 reasons 时缺失/类型不符/空数组 → i
   if (!emptyReasons.ok) assert.equal(emptyReasons.error.code, 'invalid_reasons');
 });
 
+/* ── v1.4.2 claims_checked：逐条 claim 核查清单 ── */
+
+test('parseReview：claims_checked 对象/字符串混合解析（字符串补 unspecified）', () => {
+  const r = parseReview(
+    JSON.stringify({
+      verdict: 'accept',
+      reasons: ['ok'],
+      claims_checked: [
+        { claim: 'claim A', source: 'draft' },
+        'claim B',
+        { claim: ' claim C ', source: ' NOT_FOUND ' },
+      ],
+    }),
+    ['verdict', 'reasons', 'claims_checked'],
+  );
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.deepEqual(r.value.claimsChecked, [
+      { claim: 'claim A', source: 'draft' },
+      { claim: 'claim B', source: 'unspecified' },
+      { claim: 'claim C', source: 'NOT_FOUND' },
+    ]);
+  }
+});
+
+test('parseReview：claims_checked 缺失不 fail（避免为过闸编造清单）', () => {
+  const r = parseReview('{"verdict":"accept","reasons":["ok"]}', ['verdict', 'reasons', 'claims_checked']);
+  assert.ok(r.ok);
+  if (r.ok) assert.equal(r.value.claimsChecked, undefined);
+});
+
+test('parseReview：claims_checked 空数组 → 空清单（显式声明无可核查断言）', () => {
+  const r = parseReview('{"verdict":"accept","reasons":["ok"],"claims_checked":[]}', ['verdict', 'reasons', 'claims_checked']);
+  assert.ok(r.ok);
+  if (r.ok) assert.deepEqual(r.value.claimsChecked, []);
+});
+
+test('parseReview：claims_checked 类型非法 → invalid_claims_checked（fail-closed）', () => {
+  for (const bad of [
+    '{"verdict":"accept","reasons":["ok"],"claims_checked":"claim A"}',
+    '{"verdict":"accept","reasons":["ok"],"claims_checked":[123]}',
+    '{"verdict":"accept","reasons":["ok"],"claims_checked":[{"source":"draft"}]}',
+    '{"verdict":"accept","reasons":["ok"],"claims_checked":[""]}',
+  ]) {
+    const r = parseReview(bad, ['verdict', 'reasons', 'claims_checked']);
+    assert.ok(!r.ok, bad);
+    if (!r.ok) assert.equal(r.error.code, 'invalid_claims_checked', bad);
+  }
+});
+
+test('parseReview：未配置 claims_checked 时忽略该字段（向后兼容）', () => {
+  const r = parseReview('{"verdict":"accept","reasons":["ok"],"claims_checked":[{"claim":"x","source":"draft"}]}', ['verdict', 'reasons']);
+  assert.ok(r.ok);
+  if (r.ok) assert.equal(r.value.claimsChecked, undefined);
+});
+
 test('parseReview：schema 未要求 reasons 时可缺省', () => {
   const r = parseReview('{"verdict":"accept"}', ['verdict']);
   assert.ok(r.ok);

@@ -108,6 +108,11 @@ node dist/src/cli.js run --workflow <你的工作流> --config <你的配置> --
 - `waterfall` 修订循环：`limits.max_revisions: 2` 让「评审→修订」循环到 accept 为止（默认 1 次不变）；
   评审提示内置四项评分 rubric（gate 步骤可用 `rubric:` 自定义），先打分再下结论，治评审判准漂移；
   可选 `escalate_to: { provider, model }` 在循环用尽后换强模型做最后一次修订
+- **评审逐条核查清单**（v1.4.2）：`review_schema: [verdict, reasons, claims_checked]` 让评审输出附带
+  `claims_checked`——评审者逐条列出自己实际核查过的断言及其依据（`draft` / `task` / `source_material` /
+  `NOT_FOUND`），结果经 `reviewSummary.claimsChecked` 返回并透传给修订模型。治「通过=没看出明显问题」：
+  跨厂商复核拦不住共享源材料里的错误，清单让「审了什么」可核对（注：`source` 是评审者自报，非事实保证；
+  未配置该字段时行为完全不变）
 
 ```yaml
 # parallel + 评委选优示例

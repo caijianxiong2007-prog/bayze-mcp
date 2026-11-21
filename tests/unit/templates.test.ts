@@ -60,3 +60,40 @@ test('revision_template：缺评审意见报错；完整时含意见 JSON', () =
     assert.ok(r.value.user.includes('UNTRUSTED'));
   }
 });
+
+test('review_template：schema 含 claims_checked 时提示逐条核查清单', () => {
+  const r = renderStepPrompt(
+    'review_template',
+    ctx({ previousOutput: 'DRAFT-1', reviewSchemaFields: ['verdict', 'reasons', 'claims_checked'] }),
+  );
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.ok(r.value.system !== undefined);
+    assert.ok(r.value.system.includes('claims_checked'));
+    assert.ok(r.value.system.includes('NOT_FOUND'));
+    assert.ok(r.value.user.includes('claims_checked'));
+    // 未配置时不出现（向后兼容）
+    const plain = renderStepPrompt('review_template', ctx({ previousOutput: 'DRAFT-1' }));
+    assert.ok(plain.ok);
+    if (plain.ok) assert.ok(!plain.value.system?.includes('claims_checked'));
+  }
+});
+
+test('revision_template：带 claimsChecked 的评审意见透传给修订模型', () => {
+  const r = renderStepPrompt(
+    'revision_template',
+    ctx({
+      previousOutput: 'DRAFT-1',
+      reviewFeedback: {
+        verdict: 'revise',
+        reasons: ['r1'],
+        claimsChecked: [{ claim: 'unsupported number', source: 'NOT_FOUND' }],
+      },
+    }),
+  );
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.ok(r.value.user.includes('claimsChecked'));
+    assert.ok(r.value.user.includes('NOT_FOUND'));
+  }
+});

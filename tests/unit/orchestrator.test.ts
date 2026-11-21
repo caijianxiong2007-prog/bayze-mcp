@@ -26,6 +26,7 @@ class CountingAdapter implements ProviderAdapter {
 const ALL_MODELS = [
   'mock-success',
   'mock-review-accept',
+  'mock-review-claims',
   'mock-review-revise',
   'mock-empty',
   'mock-timeout',
@@ -116,6 +117,48 @@ test('draft 空输出：draft_check_failed，review/revise 跳过', async () => 
   assert.equal(res.stopReason, 'draft_check_failed');
   assert.equal(res.steps.filter((s) => s.status === 'skipped').length, 2);
   assert.equal(res.finalOutput, undefined);
+});
+
+/* ── v1.4.2 claims_checked：评审逐条核查清单 ── */
+
+function rtrWithClaims(reviewModel: string, schema: string[]): any[] {
+  return [
+    { name: 'draft', provider: 'mockmain', model: 'mock-success', input: 'original', timeout_ms: 1000, evaluate: ['non_empty'] },
+    { name: 'review', provider: 'mockmain', model: reviewModel, input: 'review_template', timeout_ms: 1000, run_if: 'always', gate: 'structured_review', review_schema: schema },
+    { name: 'revise', provider: 'mockmain', model: 'mock-success', input: 'revision_template', timeout_ms: 1000, run_if: 'review_verdict_is_revise' },
+  ];
+}
+
+test('claims_checked：评审输出带清单 → reviewSummary.claimsChecked 透传到结果', async () => {
+  const res = await run(
+    cfg({ w: { steps: rtrWithClaims('mock-review-claims', ['verdict', 'reasons', 'claims_checked']) } }),
+    'w',
+  );
+  assert.equal(res.status, 'succeeded');
+  assert.deepEqual(res.reviewSummary?.claimsChecked, [
+    { claim: 'the draft states a factual claim', source: 'draft' },
+    { claim: 'a second claim verified against the task', source: 'unspecified' },
+    { claim: 'an unsupported assertion', source: 'NOT_FOUND' },
+  ]);
+});
+
+test('claims_checked：评审者未提供清单 → 仍成功（claimsChecked 缺省）', async () => {
+  const res = await run(
+    cfg({ w: { steps: rtrWithClaims('mock-review-accept', ['verdict', 'reasons', 'claims_checked']) } }),
+    'w',
+  );
+  assert.equal(res.status, 'succeeded');
+  assert.equal(res.reviewSummary?.claimsChecked, undefined);
+  assert.equal(res.reviewSummary?.verdict, 'accept');
+});
+
+test('claims_checked：未配置该字段时忽略评审输出的清单（向后兼容）', async () => {
+  const res = await run(
+    cfg({ w: { steps: rtrWithClaims('mock-review-claims', ['verdict', 'reasons']) } }),
+    'w',
+  );
+  assert.equal(res.status, 'succeeded');
+  assert.equal(res.reviewSummary?.claimsChecked, undefined);
 });
 
 test('长度检查失败：trigger 记录 check_failed:max_chars', async () => {
